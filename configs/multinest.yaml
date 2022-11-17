@@ -1,0 +1,28 @@
+title: MultiNest example configuration file.
+
+device: "cpu"
+june_configuration_file: "./configs/june.yaml"
+
+results_path: "./results/multinest"
+
+parameters_to_fit:
+  infection_networks.networks.company.log_beta:
+    prior:
+      dist: Normal
+      loc: 0.0
+      scale: 1.0
+  infection_networks.networks.school.log_beta:
+    prior:
+      dist: Normal
+      loc: 0.0
+      scale: 1.0
+
+data:
+  observed_data: "./june_example/results.csv"
+  observable: 
+    cases_per_timestep:
+      time_stamps: [-1]
+      error: 0.002
+
+inference_configuration:
+  likelihood: Normal
