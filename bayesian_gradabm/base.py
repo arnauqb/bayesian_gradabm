@@ -2,14 +2,14 @@ from abc import ABC
 import pandas as pd
 import yaml
 import pickle
+import sys
 import torch
-import gpytorch
 from pathlib import Path
 import pyro.distributions as dist
 
 from torch_june import Runner
-from torch_june_inference.utils import get_attribute, set_attribute
-from torch_june_inference.utils import read_device
+from .utils import get_attribute, set_attribute
+from .utils import read_device
 
 
 class InferenceEngine(ABC):

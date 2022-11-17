@@ -1,6 +1,6 @@
 title: MultiNest example configuration file.
 
-device: "cpu"
+device: "mpi_rank"
 june_configuration_file: "./configs/june.yaml"
 
 results_path: "./results/multinest"
@@ -9,20 +9,42 @@ parameters_to_fit:
   infection_networks.networks.company.log_beta:
     prior:
       dist: Normal
-      loc: 0.0
+      loc: 1.0
       scale: 1.0
   infection_networks.networks.school.log_beta:
     prior:
       dist: Normal
-      loc: 0.0
+      loc: 1.0
       scale: 1.0
 
 data:
-  observed_data: "./june_example/results.csv"
+  observed_data: "./results/june/results.csv"
   observable: 
-    cases_per_timestep:
-      time_stamps: [-1]
-      error: 0.002
+    cases_by_age_18:
+      time_stamps: "all"
+      error: 0.10
+    cases_by_age_25:
+      time_stamps: "all"
+      error: 0.10
+    cases_by_age_35:
+      time_stamps: "all"
+      error: 0.10
+    cases_by_age_45:
+      time_stamps: "all"
+      error: 0.10
+    cases_by_age_55:
+      time_stamps: "all"
+      error: 0.10
+    cases_by_age_65:
+      time_stamps: "all"
+      error: 0.10
+    cases_by_age_75:
+      time_stamps: "all"
+      error: 0.10
+    cases_by_age_100:
+      time_stamps: "all"
+      error: 0.10
 
-inference_configuration:
+
+training:
   likelihood: Normal

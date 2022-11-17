@@ -1,7 +1,7 @@
 import numpy as np
 import re
 
-from torch_june_inference.mpi_setup import mpi_rank
+from .mpi_setup import mpi_rank
 
 def read_fortran_data_file(file):
     # count the columns in the first row of data
@@ -15,6 +15,8 @@ def read_fortran_data_file(file):
     return data
 
 def read_device(device):
+    print("reading")
+    print(mpi_rank)
     if device == "mpi_rank":
         device = f"cuda:{mpi_rank}"
     return device

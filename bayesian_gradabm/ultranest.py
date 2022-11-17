@@ -72,7 +72,7 @@ class UltraNest(InferenceEngine):
             self.prior_transform,
             log_dir=self.results_path.as_posix(),
         )
-        results = sampler.run(max_ncalls=100)
+        results = sampler.run()#max_ncalls=1000)
         sampler.print_results()
         with open(Path(sampler.logs["run_dir"]) / "results.pkl", "wb") as f:
             pickle.dump(results, f)
