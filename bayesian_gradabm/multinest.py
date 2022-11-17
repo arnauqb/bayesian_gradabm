@@ -10,7 +10,6 @@ from scipy import stats
 from torch_june import TorchJune
 from .utils import read_fortran_data_file, set_attribute
 from .base import InferenceEngine
-from .paths import config_path
 
 
 def read_pyro_to_scipy(dist, **kwargs):
