@@ -1,16 +1,15 @@
 title: Torch June default configuration file.
 
 system:
-  device: cpu
+  device: cuda:2
   random_seed: random
 
-data_path: '@torch_june/worlds/data_camden.pkl'
-    #data_path: '/cosma7/data/dp004/dc-quer1/torch_june_worlds/data_london_3_districts.pkl'
+data_path: '/cosma7/data/dp004/dc-quer1/torch_june_worlds/data_london_3_districts.pkl'
 
 save_path: ./results/june
 
 timer:
-  total_days: 30
+  total_days: 10 # to 2020-07-04
   initial_day: '2020-03-01'
   step_duration:
     weekday:
@@ -28,70 +27,95 @@ timer:
       - gym
       - cinema
       - visit 
+      - care_visit
       - care_home
       - household
     weekend:
       0:
-      - pub
+      - pub 
       - grocery
       - gym
       - cinema
       - visit 
+      - care_visit
       - care_home
       - household
 
 infection_seed:
-  log_fraction_initial_cases: -3
+  log_fraction_initial_cases: -3.5
 
 networks:
   household:
-    log_beta: -0.4
+    log_beta: 0.3
   company:
-    log_beta: 0.75
+    log_beta: 1.5
   school:
-    log_beta: 1.25
+    log_beta: 2.0
   pub:
-    log_beta: -1.2
+    log_beta: 0.0
   gym:
-    log_beta: -1.2
+    log_beta: 0.0
   grocery:
-    log_beta: -1.2
+    log_beta: 0.0
   visit:
-    log_beta: -1.2
+    log_beta: 0.0
+  care_visit:
+    log_beta: 0.0
   cinema:
-    log_beta: -1.2
+    log_beta: 0.0
   university:
-    log_beta: -0.5
+    log_beta: 0.3
   care_home:
-    log_beta: -0.4
+    log_beta: 0.3
 
 policies:
   interaction:
     social_distancing:
       1:
-        start_date: 2022-02-15
-        end_date: 2022-03-15
+        start_date: 2020-03-16
+        end_date: 2020-03-24
         beta_factors:
-          school: 0.5
-          company: 0.5
+          household: 0.8
+          care_home: 0.8
+          care_visit: 0.8
+          cinema: 0.8
+          company: 0.8
+          grocery: 0.8
+          gym: 0.8
+          pub: 0.8
+          school: 0.8 
+          university: 0.8
+          visit: 0.8
       2:
-        start_date: 2022-03-15
-        end_date: 2022-04-15
+        start_date: 2020-03-24
+        end_date: 2020-05-11
         beta_factors:
-          pub: 0.5
-          cinema: 0.5
-          gym: 0.5
-          grocery: 0.5
-          visit: 0.5
+          household: 0.5
+          care_home: 0.5
+          care_visit: 0.25
+          cinema: 0.0
+          company: 0.2
+          grocery: 0.3
+          gym: 0.0
+          pub: 0.0
+          school: 0.1
+          university: 0.0
+          visit: 0.0
       3:
-        start_date: 2023-04-15
-        end_date: 2022-05-15
+        start_date: 2020-05-11
+        end_date: 2999-01-01
         beta_factors:
-          pub: 0.5
-          cinema: 0.5
-          gym: 0.5
-          grocery: 0.5
-          visit: 0.5
+          household: 0.6
+          care_home: 0.6
+          care_visit: 0.25
+          cinema: 0.0
+          company: 0.4
+          grocery: 0.3
+          gym: 0.0
+          pub: 0.0
+          school: 0.1
+          university: 0.0
+          visit: 0.0
 
 transmission:
   max_infectiousness:
@@ -140,38 +164,38 @@ symptoms:
       80-90: 0.9
       90-100: 0.9
     symptomatic:
-      0-10: 0.0005
-      10-20: 0.00165
-      20-30: 0.0072
-      30-40: 0.0208
-      40-50: 0.0343
-      50-60: 0.0765
-      60-70: 0.1328
-      70-80: 0.20655
-      80-90: 0.2457
-      90-100: 0.2457
+      0-10: 0.000007
+      10-20: 0.000033
+      20-30: 0.000141
+      30-40: 0.000546
+      40-50: 0.002041
+      50-60: 0.04586
+      60-70: 0.097496
+      70-80: 0.224919
+      80-90: 0.286880
+      90-100: 0.392194
     severe:
-      0-10: 3.0e-05
-      10-20: 8.0e-05
-      20-30: 0.00036
-      30-40: 0.00104
-      40-50: 0.00216
-      50-60: 0.00933
-      60-70: 0.03639
-      70-80: 0.08923
-      80-90: 0.1742
-      90-100: 0.1742
+      0-10: 1.0
+      10-20: 1.0 
+      20-30: 1.0 
+      30-40: 1.0 
+      40-50: 1.0 
+      50-60: 1.0 
+      60-70: 1.0 
+      70-80: 1.0 
+      80-90: 1.0 
+      90-100: 1.0
     critical:
-      0-10: 2.0e-05
-      10-20: 2.0e-05
-      20-30: 0.0001
-      30-40: 0.00032
-      40-50: 0.00098
-      50-60: 0.00265
-      60-70: 0.00766
-      70-80: 0.02439
-      80-90: 0.08292
-      90-100: 0.1619
+      0-10: 1.0
+      10-20: 1.0
+      20-30: 1.0
+      30-40: 1.0
+      40-50: 1.0
+      50-60: 1.0
+      60-70: 1.0
+      70-80: 1.0
+      80-90: 1.0
+      90-100: 1.0
   stage_transition_times:
     exposed:
       dist: LogNormal
@@ -411,3 +435,23 @@ leisure:
         51-66: 0.1405
         66-86: 0.1145
         86-100: 0.075
+
+  care_visit:
+    weekday:
+      male:
+        0-65: 0.0
+        65-75: 0.25
+        75-100: 0.5
+      female:
+        0-65: 0.0
+        65-75: 0.25
+        75-100: 0.5
+    weekend:
+      male:
+        0-65: 0.0
+        65-75: 0.25
+        75-100: 0.5
+      female:
+        0-65: 0.0
+        65-75: 0.25
+        75-100: 0.5

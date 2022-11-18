@@ -3,6 +3,7 @@ import corner
 import numpy as np
 import torch
 import shutil
+from time import time
 from tqdm import tqdm
 import os
 import matplotlib.pyplot as plt
@@ -33,6 +34,7 @@ class NormFlows(InferenceEngine):
         self.nfm = self.nfm.to(self.device)
 
     def _get_optimizer_and_scheduler(self):
+        return torch.optim.Adam(self.nfm.parameters(), lr=1e-4)
         config = self.training_configuration["optimizer"]
         optimizer_type = config.pop("type")
         if "milestones" in config:
@@ -51,6 +53,7 @@ class NormFlows(InferenceEngine):
         return optimizer, scheduler
 
     def _get_loss(self):
+        return torch.nn.MSELoss(reduction="mean")
         config = self.training_configuration["loss"]
         loss_class = getattr(torch.nn, config.pop("type"))
         loss = loss_class(**config)
@@ -113,10 +116,10 @@ class NormFlows(InferenceEngine):
         f.savefig(self.results_path / "loss.png", dpi=150)
         return
 
-    def get_score(self, i, params, loss_fn):
+    def get_score(self, i, params, loss_fn, n_samples):
         params = torch.clip(params, min=-5, max=5)
         for i, name in enumerate(self.priors):
-            set_attribute(self.runner, name, params[i])
+            set_attribute(self.runner, name, params[i].to(self.device))
         results, _ = self.runner()
         for key in self.data_observable:
             time_stamps = self.data_observable[key]["time_stamps"]
@@ -124,7 +127,7 @@ class NormFlows(InferenceEngine):
                 time_stamps = range(len(results["dates"]))
             y = results[key][time_stamps]
             y_obs = self.observed_data[key][time_stamps]
-            loss_i = loss_fn(y, y_obs)
+            loss_i = loss_fn(y, y_obs) / n_samples
         loss_i.backward()
         return loss_i
 
@@ -140,16 +143,18 @@ class NormFlows(InferenceEngine):
         cases = None
         for i in range(n_samples):
             if i % mpi_size == mpi_rank:
-                loss_i = self.get_score(i, params_list[i], loss_fn)
+                loss_i = self.get_score(i, params_list[i], loss_fn, n_samples)
                 loss += loss_i
-        mpi_comm.Barrier()
-        losses = mpi_comm.gather(loss, root=0)
-        if mpi_rank == 0:
-            losses = torch.hstack(losses)
-            loss = torch.sum(losses)
-            return loss / n_samples
-        else:
-            return None
+        #mpi_comm.Barrier()
+        #losses = mpi_comm.gather(loss, root=0)
+        #if mpi_rank == 0:
+        #    losses = [loss.to(self.device) for loss in losses]
+        #    losses = torch.hstack(losses)
+        #    loss = torch.sum(losses)
+        #    return loss 
+        #else:
+        #    return None
+        return loss
 
     def run(self):
         loss_fn = self._get_loss()
@@ -157,7 +162,8 @@ class NormFlows(InferenceEngine):
 
         if mpi_rank == 0:
             self._setup_flow()
-            optimizer, scheduler = self._get_optimizer_and_scheduler()
+            optimizer = self._get_optimizer_and_scheduler()
+            #optimizer, scheduler = self._get_optimizer_and_scheduler()
 
             self.posteriors_path = self.results_path / "posteriors"
             self.fits_path = self.results_path / "fits"
