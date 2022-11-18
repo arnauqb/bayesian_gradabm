@@ -8,8 +8,8 @@ from pathlib import Path
 import pyro.distributions as dist
 
 from torch_june import Runner
-from .utils import get_attribute, set_attribute
-from .utils import read_device
+from .utils import get_attribute, set_attribute, read_device
+from .mpi_setup import mpi_rank
 
 
 class InferenceEngine(ABC):
@@ -37,18 +37,18 @@ class InferenceEngine(ABC):
         with open(fpath, "r") as f:
             params = yaml.safe_load(f)
         # reads mpi setup
-        params["device"] = read_device(params["device"])
+        #params["device"] = read_device(params["device"])
         return cls.from_parameters(params)
 
     @classmethod
     def from_parameters(cls, parameters):
-        device = parameters["device"]
         with open(parameters["june_configuration_file"], "r") as f:
             june_params = yaml.safe_load(f)
-        june_params["system"]["device"] = parameters["device"]
+        device = parameters["device"][mpi_rank]
+        june_params["system"]["device"] = device
         runner = Runner.from_parameters(june_params)
         priors = cls.read_parameters_to_fit(parameters)
-        observed_data = cls.load_observed_data(parameters)
+        observed_data = cls.load_observed_data(parameters, device)
         data_observable = parameters["data"]["observable"]
         training_configuration = parameters.get("training", {})
         return cls(
@@ -57,7 +57,7 @@ class InferenceEngine(ABC):
             results_path=parameters["results_path"],
             observed_data=observed_data,
             data_observable=data_observable,
-            device=parameters["device"],
+            device=device,
             training_configuration=training_configuration,
         )
 
@@ -72,12 +72,12 @@ class InferenceEngine(ABC):
         return ret
 
     @classmethod
-    def load_observed_data(cls, params):
+    def load_observed_data(cls, params, device):
         data_params = params["data"]
         df = pd.read_csv(data_params["observed_data"], index_col=0)
         ret = {}
         for key in df:
-            ret[key] = torch.tensor(df[key], device=params["device"], dtype=torch.float)
+            ret[key] = torch.tensor(df[key], device=device, dtype=torch.float)
         return ret
 
     def _set_initial_parameters(self):

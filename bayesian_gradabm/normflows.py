@@ -11,7 +11,7 @@ from copy import deepcopy
 from .base import InferenceEngine
 from .utils import set_attribute
 
-from .mpi_utils import mpi_rank, mpi_comm, mpi_size
+from .mpi_setup import mpi_rank, mpi_comm, mpi_size
 
 
 class NormFlows(InferenceEngine):
@@ -29,11 +29,10 @@ class NormFlows(InferenceEngine):
                 flow = flow_class(**flow_config[flow_name])
                 flows.append(flow)
         q0 = nf.distributions.DiagGaussian(len(self.priors), trainable=False)
-        nfm = nf.NormalizingFlow(q0=q0, flows=flows)
-        nfm = nfm.to(self.device)
-        return nfm
+        self.nfm = nf.NormalizingFlow(q0=q0, flows=flows)
+        self.nfm = self.nfm.to(self.device)
 
-    def _get_optimizer_and_scheduler(self, nfm):
+    def _get_optimizer_and_scheduler(self):
         config = self.training_configuration["optimizer"]
         optimizer_type = config.pop("type")
         if "milestones" in config:
@@ -45,7 +44,7 @@ class NormFlows(InferenceEngine):
         else:
             gamma = 1.0
         optimizer_class = getattr(torch.optim, optimizer_type)
-        optimizer = optimizer_class(nfm.parameters(), **config)
+        optimizer = optimizer_class(self.nfm.parameters(), **config)
         scheduler = torch.optim.lr_scheduler.MultiStepLR(
             optimizer, milestones=milestones, gamma=gamma
         )
@@ -57,8 +56,8 @@ class NormFlows(InferenceEngine):
         loss = loss_class(**config)
         return loss
 
-    def _plot_posterior(self, nfm, it):
-        posteriors = nfm.sample(10000)
+    def _plot_posterior(self, it):
+        posteriors = self.nfm.sample(10000)
         samples = posteriors[0].cpu().detach().numpy()
         samples = np.where(~np.isnan(samples), samples, 0)
         samples = np.where(~np.isinf(samples), samples, 0)
@@ -114,10 +113,10 @@ class NormFlows(InferenceEngine):
         f.savefig(self.results_path / "loss.png", dpi=150)
         return
 
-    def get_score(self, i, nfm, params, loss_fn):
+    def get_score(self, i, params, loss_fn):
         params = torch.clip(params, min=-5, max=5)
         for i, name in enumerate(self.priors):
-            set_attribute(self.runner, name, params[0][i])
+            set_attribute(self.runner, name, params[i])
         results, _ = self.runner()
         for key in self.data_observable:
             time_stamps = self.data_observable[key]["time_stamps"]
@@ -127,28 +126,38 @@ class NormFlows(InferenceEngine):
             y_obs = self.observed_data[key][time_stamps]
             loss_i = loss_fn(y, y_obs)
         loss_i.backward()
-        return loss_i.to(self.devices[0])
+        return loss_i
 
 
-    def _get_forecast_score(self, nfm, loss_fn, n_samples=5):
+    def _get_forecast_score(self, loss_fn, n_samples=5):
         loss = 0
-        params_list = nfm.sample(n_samples)
-        cases = None
-        losses = mpi_comm.
-        #for i in range(n_samples):
-        #    if i % mpi_rank == 0:
-        #        loss_i = self.get_score(i, nfm, samples[i], loss_fn)
-        #        loss += loss_i
+        if mpi_rank == 0:
+            params_list = [self.nfm.sample()[0][0] for i in range(n_samples)]
+        else:
+            params_list = None
         mpi_comm.Barrier()
-        return loss / n_samples
+        params_list = mpi_comm.bcast(params_list, root=0)
+        cases = None
+        for i in range(n_samples):
+            if i % mpi_size == mpi_rank:
+                loss_i = self.get_score(i, params_list[i], loss_fn)
+                loss += loss_i
+        mpi_comm.Barrier()
+        losses = mpi_comm.gather(loss, root=0)
+        if mpi_rank == 0:
+            losses = torch.hstack(losses)
+            loss = torch.sum(losses)
+            return loss / n_samples
+        else:
+            return None
 
     def run(self):
         loss_fn = self._get_loss()
+        max_iter = self.training_configuration["n_steps"]
 
         if mpi_rank == 0:
-            max_iter = self.training_configuration["n_steps"]
-            nfm = self._setup_flow()
-            optimizer, scheduler = self._get_optimizer_and_scheduler(nfm=nfm)
+            self._setup_flow()
+            optimizer, scheduler = self._get_optimizer_and_scheduler()
 
             self.posteriors_path = self.results_path / "posteriors"
             self.fits_path = self.results_path / "fits"
@@ -169,7 +178,6 @@ class NormFlows(InferenceEngine):
 
             # Sample parameters
             score = self._get_forecast_score(
-                nfm=nfm,
                 loss_fn=loss_fn,
                 n_samples=self.training_configuration["n_samples"],
             )
@@ -180,9 +188,9 @@ class NormFlows(InferenceEngine):
                 optimizer.step()
                 loss_hist.append(score.item())
                 if score.item() < best_loss:
-                    torch.save(nfm.state_dict(), "./best_model.pth")
+                    torch.save(self.nfm.state_dict(), "./best_model.pth")
                     best_loss = score.item()
-                self._plot_posterior(nfm, it + 1)
+                self._plot_posterior(it + 1)
                 plt.close()
                 self._plot_loss_hist(loss_hist)
                 plt.close()

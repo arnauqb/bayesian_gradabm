@@ -4,8 +4,8 @@ system:
   device: cpu
   random_seed: random
 
-    #data_path: '@torch_june/worlds/data_camden.pkl'
-data_path: '/cosma7/data/dp004/dc-quer1/torch_june_worlds/data_london_3_districts.pkl'
+data_path: '@torch_june/worlds/data_camden.pkl'
+    #data_path: '/cosma7/data/dp004/dc-quer1/torch_june_worlds/data_london_3_districts.pkl'
 
 save_path: ./results/june
 
