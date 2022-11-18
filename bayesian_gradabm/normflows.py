@@ -1,13 +1,17 @@
 import normflows as nf
+import corner
 import numpy as np
 import torch
 import shutil
 from tqdm import tqdm
 import os
+import matplotlib.pyplot as plt
 from copy import deepcopy
 
 from .base import InferenceEngine
 from .utils import set_attribute
+
+from .mpi_utils import mpi_rank, mpi_comm, mpi_size
 
 
 class NormFlows(InferenceEngine):
@@ -60,6 +64,7 @@ class NormFlows(InferenceEngine):
         samples = np.where(~np.isinf(samples), samples, 0)
         samples = np.where(np.abs(samples) < 5, samples, 0)
         labels = [name.split(".")[-2] for name in self.priors]
+        true_values = [0.75, 1.25]
         f = corner.corner(
             samples,
             labels=labels,
@@ -70,7 +75,7 @@ class NormFlows(InferenceEngine):
             range=[(-4, 4) for i in range(len(true_values))],
         )
         f.savefig(
-            self.results_paths / f"posteriors/posterior_{it:03d}.png",
+            self.results_path / f"posteriors/posterior_{it:03d}.png",
             dpi=150,
             facecolor="white",
         )
@@ -96,7 +101,7 @@ class NormFlows(InferenceEngine):
         ax.set_ylabel("Cases")
         f.autofmt_xdate()
         f.savefig(
-            self.results_paths / f"fits/fit_{it:03d}.png", dpi=150, facecolor="white"
+            self.results_path / f"fits/fit_{it:03d}.png", dpi=150, facecolor="white"
         )
         return
 
@@ -109,75 +114,79 @@ class NormFlows(InferenceEngine):
         f.savefig(self.results_path / "loss.png", dpi=150)
         return
 
+    def get_score(self, i, nfm, params, loss_fn):
+        params = torch.clip(params, min=-5, max=5)
+        for i, name in enumerate(self.priors):
+            set_attribute(self.runner, name, params[0][i])
+        results, _ = self.runner()
+        for key in self.data_observable:
+            time_stamps = self.data_observable[key]["time_stamps"]
+            if time_stamps == "all":
+                time_stamps = range(len(results["dates"]))
+            y = results[key][time_stamps]
+            y_obs = self.observed_data[key][time_stamps]
+            loss_i = loss_fn(y, y_obs)
+        loss_i.backward()
+        return loss_i.to(self.devices[0])
+
+
     def _get_forecast_score(self, nfm, loss_fn, n_samples=5):
         loss = 0
+        params_list = nfm.sample(n_samples)
         cases = None
-        for i in range(n_samples):
-            params, _ = nfm.sample()
-            if torch.isnan(params).any():
-                continue
-            params = torch.clip(params, min=-5, max=5)
-            for i, name in enumerate(self.priors):
-                set_attribute(self.runner.model, name, params[0][i])
-            results, _ = self.runner()
-            for key in self.data_observable:
-                time_stamps = self.data_observable[key]["time_stamps"]
-                if time_stamps == "all":
-                    time_stamps = range(len(results["dates"]))
-                y = results[key][time_stamps]
-                y_obs = self.observed_data[key][time_stamps]
-                loss_i = loss_fn(y, y_obs)
-            new_cases = results["cases_per_timestep"].detach()
-            if cases is None:
-                cases = new_cases
-            else:
-                cases = torch.vstack((cases, new_cases))
-
-            loss_i.backward()
-            loss += loss_i
-        cases_mean = torch.mean(cases, 0)
-        cases_std = torch.std(cases, 0)
-        return loss / n_samples, cases_mean, cases_std
+        losses = mpi_comm.
+        #for i in range(n_samples):
+        #    if i % mpi_rank == 0:
+        #        loss_i = self.get_score(i, nfm, samples[i], loss_fn)
+        #        loss += loss_i
+        mpi_comm.Barrier()
+        return loss / n_samples
 
     def run(self):
-        max_iter = self.training_configuration["n_samples"]
-        nfm = self._setup_flow()
-        optimizer, scheduler = self._get_optimizer_and_scheduler(nfm=nfm)
         loss_fn = self._get_loss()
 
-        self.posteriors_path = self.results_path / "posteriors"
-        self.fits_path = self.results_path / "fits"
+        if mpi_rank == 0:
+            max_iter = self.training_configuration["n_steps"]
+            nfm = self._setup_flow()
+            optimizer, scheduler = self._get_optimizer_and_scheduler(nfm=nfm)
 
-        if self.posteriors_path.exists():
-            shutil.rmtree(self.posteriors_path)
-        self.posteriors_path.mkdir(parents=True)
-        if self.fits_path.exists():
-            shutil.rmtree(self.fits_path)
-        self.fits_path.mkdir(parents=True)
+            self.posteriors_path = self.results_path / "posteriors"
+            self.fits_path = self.results_path / "fits"
 
-        best_loss = np.inf
-        loss_hist = []
+            if self.posteriors_path.exists():
+                shutil.rmtree(self.posteriors_path)
+            self.posteriors_path.mkdir(parents=True)
+            if self.fits_path.exists():
+                shutil.rmtree(self.fits_path)
+            self.fits_path.mkdir(parents=True)
+
+            best_loss = np.inf
+            loss_hist = []
+
         for it in tqdm(range(max_iter)):
-            optimizer.zero_grad()
+            if mpi_rank == 0:
+                optimizer.zero_grad()
 
             # Sample parameters
-            score, cases_mean, cases_std = self._get_forecast_score(
-                nfm=nfm, loss_fn=loss_fn, n_samples=50
+            score = self._get_forecast_score(
+                nfm=nfm,
+                loss_fn=loss_fn,
+                n_samples=self.training_configuration["n_samples"],
             )
-            self.plot_prediction(cases_mean, cases_std, data, it + 1)
-            plt.close()
-            print(score)
+            # self._plot_prediction(cases_mean, cases_std, self.data_observable["cases_per_timestep"], it + 1)
+            # plt.close()
             # score.backward()
-            optimizer.step()
-            loss_hist.append(score.item())
-            if score.item() < best_loss:
-                torch.save(nfm.state_dict(), "./best_model.pth")
-                best_loss = score.item()
-            self.plot_posterior(nfm, it + 1)
-            plt.close()
-            self.plot_loss(loss_hist)
-            plt.close()
+            if mpi_rank == 0:
+                optimizer.step()
+                loss_hist.append(score.item())
+                if score.item() < best_loss:
+                    torch.save(nfm.state_dict(), "./best_model.pth")
+                    best_loss = score.item()
+                self._plot_posterior(nfm, it + 1)
+                plt.close()
+                self._plot_loss_hist(loss_hist)
+                plt.close()
 
             # Log loss
         loss_hist = np.array(loss_hist)
-        return 
+        return

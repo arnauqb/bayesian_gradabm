@@ -15,8 +15,6 @@ def read_fortran_data_file(file):
     return data
 
 def read_device(device):
-    print("reading")
-    print(mpi_rank)
     if device == "mpi_rank":
         device = f"cuda:{mpi_rank}"
     return device

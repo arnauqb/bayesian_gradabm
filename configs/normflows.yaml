@@ -1,6 +1,7 @@
 title: Normalizing flows example configuration file.
 
-device: "cpu"
+device: ["cuda:6", "cuda:7", "cuda:8"]
+
 june_configuration_file: "./configs/june.yaml"
 
 results_path: "./results/normflows"
@@ -12,15 +13,15 @@ parameters_to_fit:
 
 training:
   n_steps: 250
-  n_samples: 10
+  n_samples: 15
   loss:
     type: MSELoss
     reduction: mean
   optimizer:
     type: Adam
-    lr: 0.0005
+    lr: 0.0001
     betas: [0.95, 0.999]
-    milestones: []
+    milestones: [100, 500]
     gamma: 0.2
   flow:
     K: 8
