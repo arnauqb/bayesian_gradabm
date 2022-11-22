@@ -9,7 +9,7 @@ def run(rank, size):
     nf.run(rank, size)
     pass
 
-def init_process(rank, size, fn, backend='nccl'):
+def init_process(rank, size, fn, backend='gloo'):
     """ Initialize the distributed environment. """
     os.environ['MASTER_ADDR'] = '127.0.0.1'
     os.environ['MASTER_PORT'] = '29500'

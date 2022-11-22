@@ -34,7 +34,7 @@ class NormFlows(InferenceEngine):
             shutil.rmtree(self.fits_path)
         self.fits_path.mkdir(parents=True)
 
-    def _setup_flow(self):
+    def _setup_flow(self, rank):
         flow_config = deepcopy(self.training_configuration["flow"])
         K = flow_config.pop("K")
         flows = []
@@ -46,6 +46,7 @@ class NormFlows(InferenceEngine):
         q0 = nf.distributions.DiagGaussian(len(self.priors), trainable=False)
         self.nfm = nf.NormalizingFlow(q0=q0, flows=flows)
         self.nfm = self.nfm.to(self.device)
+        self.nfm = DDP(self.nfm, device_ids=[rank])
 
     def _get_optimizer_and_scheduler(self):
         config = deepcopy(self.training_configuration["optimizer"])
@@ -166,31 +167,33 @@ class NormFlows(InferenceEngine):
     def compute_score(self, rank, size, loss_fn, n_samples):
         loss = 0
         params_to_run = []
-        params = torch.zeros(2, device="cuda:0")
-        if rank == 0:
-            params = torch.tensor([1.0, 1.0], device="cuda:0")
-            dist.send(tensor=params, dst=dest_rank)
-        if rank == 1:
-            dist.recv(tensor=params, src=0)
-        #for i in range(n_samples):
-        #    dest_rank = i % size
-        #    params = torch.zeros(2, device="cuda:0")
-        #    if rank == 0:
-        #        # params, _ = self.nfm.sample()
-        #        # params = params[0].to("cpu")
-        #        params = torch.tensor([1.0, 1.0], device="cuda:0")
-        #        dist.send(tensor=params, dst=dest_rank)
-        #    elif (dest_rank == rank) and rank != 0:
-        #        dist.recv(tensor=params, src=0)
-        #    print(f"I am rank {rank} and have params {params}")
+        for i in range(n_samples):
+            dest_rank = i % size
+            if rank == dest_rank:
+                params, _ = self.nfm.sample()
+                print(f"I am rank {rank} and have params {params}")
+
+            #if rank == 0:
+            #    params, _ = self.nfm.sample()
+            #    params = params[0].to("cpu")
+            #    if dest_rank != 0:
+            #        dist.send(tensor=params, dst=dest_rank)
+            #    else:
+            #        params_to_run.append(params)
+            #elif (dest_rank == rank):
+            #    params = torch.zeros(2)
+            #    dist.recv(tensor=params, src=0)
+            #    params_to_run.append(params)
+        #print(f"I am rank {rank} and have params {params_to_run}")
+        #print("---------")
 
     def run(self, rank, size):
         max_iter = self.training_configuration["n_steps"]
         loss_fn = self._get_loss()
         n_samples = 10
+        self._setup_flow(rank)
         if rank == 0:
             self._make_dirs()
-            self._setup_flow()
             optimizer, scheduler = self._get_optimizer_and_scheduler()
             best_loss = np.inf
             loss_hist = []
@@ -200,12 +203,12 @@ class NormFlows(InferenceEngine):
                 optimizer.zero_grad()
 
             score = self.compute_score(rank, size, loss_fn, n_samples)
-            if rank == 0:
-                optimizer.step()
-                loss_hist.append(score.item())
-                if score.item() < best_loss:
-                    torch.save(self.nfm.state_dict(), "./best_model.pth")
-                    best_loss = score.item()
+            #if rank == 0:
+            #    optimizer.step()
+            #    loss_hist.append(score.item())
+            #    if score.item() < best_loss:
+            #        torch.save(self.nfm.state_dict(), "./best_model.pth")
+            #        best_loss = score.item()
 
     # def run(self):
     # size = 2
