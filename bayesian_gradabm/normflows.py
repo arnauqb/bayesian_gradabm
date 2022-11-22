@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from copy import deepcopy
 import torch.distributed as dist
 import torch.multiprocessing as mp
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 from .base import InferenceEngine
 from .utils import set_attribute
@@ -165,27 +166,25 @@ class NormFlows(InferenceEngine):
     def compute_score(self, rank, size, loss_fn, n_samples):
         loss = 0
         params_to_run = []
-        for i in range(n_samples):
-            dest_rank = i % size
-            if rank == 0:
-                params, _ = self.nfm.sample()
-                params = params[0].to("cpu")
-                params = torch.tensor([1.,1.])
-                print(params)
-                dist.send(tensor=params, dst=dest_rank)
-            elif dest_rank == rank:
-                params = torch.zeros(2, )
-                print(params)
-                dist.recv(tensor=params, src=0)
-                print(f"I am rank {rank} and have params {params}")
+        params = torch.zeros(2, device="cuda:0")
+        if rank == 0:
+            params = torch.tensor([1.0, 1.0], device="cuda:0")
+            dist.send(tensor=params, dst=dest_rank)
+        if rank == 1:
+            dist.recv(tensor=params, src=0)
+        #for i in range(n_samples):
+        #    dest_rank = i % size
+        #    params = torch.zeros(2, device="cuda:0")
+        #    if rank == 0:
+        #        # params, _ = self.nfm.sample()
+        #        # params = params[0].to("cpu")
+        #        params = torch.tensor([1.0, 1.0], device="cuda:0")
+        #        dist.send(tensor=params, dst=dest_rank)
+        #    elif (dest_rank == rank) and rank != 0:
+        #        dist.recv(tensor=params, src=0)
+        #    print(f"I am rank {rank} and have params {params}")
 
-
-    def _setup_rank(self, rank, size):
-        # initialize the process group
-        dist.init_process_group("gloo", rank=rank, world_size=size)
-
-    def run_rank(self, rank, size):
-        self._setup_rank(rank, size)
+    def run(self, rank, size):
         max_iter = self.training_configuration["n_steps"]
         loss_fn = self._get_loss()
         n_samples = 10
@@ -208,12 +207,12 @@ class NormFlows(InferenceEngine):
                     torch.save(self.nfm.state_dict(), "./best_model.pth")
                     best_loss = score.item()
 
-    def run(self):
-        size = 2
-        processes = []
-        for rank in range(size):
-            p = mp.Process(target=self.run_rank, args=(rank, size))
-            p.start()
-            processes.append(p)
-        for p in processes:
-            p.join()
+    # def run(self):
+    # size = 2
+    # processes = []
+    # for rank in range(size):
+    #    p = mp.Process(target=self.run_rank, args=(rank, size))
+    #    p.start()
+    #    processes.append(p)
+    # for p in processes:
+    #    p.join()

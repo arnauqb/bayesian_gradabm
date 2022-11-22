@@ -1,7 +1,7 @@
 title: Torch June default configuration file.
 
 system:
-  device: cuda:2
+  device: cpu
   random_seed: random
 
 data_path: '/cosma7/data/dp004/dc-quer1/torch_june_worlds/data_london_3_districts.pkl'

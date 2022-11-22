@@ -2,7 +2,7 @@ title: Normalizing flows example configuration file.
 
   #device: ["cuda:0", "cuda:1", "cuda:2", "cuda:3"]
   #device: ["cuda:0", "cuda:1", "cuda:2", "cuda:3", "cuda:4", "cuda:5", "cuda:6", "cuda:7"]
-device: ["cuda:0"]
+device: ["cpu"]
 
 june_configuration_file: "./configs/june.yaml"
 
