@@ -172,11 +172,11 @@ class NormFlows(InferenceEngine):
                 params = params[0].to("cpu")
                 params = torch.tensor([1.,1.])
                 print(params)
-                params = dist.send(tensor=params, dst=dest_rank)
+                dist.send(tensor=params, dst=dest_rank)
             elif dest_rank == rank:
                 params = torch.zeros(2, )
                 print(params)
-                params = dist.recv(tensor=params, src=0)
+                dist.recv(tensor=params, src=0)
                 print(f"I am rank {rank} and have params {params}")
 
 
