@@ -14,11 +14,12 @@ class RNN(torch.nn.Module):
             input_size=input_size,
             hidden_size=hidden_size,
             num_layers=num_layers,
-            batch_first=True,
+            batch_first=False,
             bidirectional=False,
         )
         self.fc = torch.nn.Linear(hidden_size, output_size)
 
     def forward(self, x):
         x, _ = self.torch_rnn(x)
-        return self.fc(x[:, 1, :])
+        #return self.fc(x[:, 1, :])
+        return self.fc(x[0,:,:])

@@ -7,7 +7,7 @@ import torch
 from pathlib import Path
 import pyro.distributions as dist
 
-from torch_june import Runner
+from grad_june import Runner
 from .utils import get_attribute, set_attribute, read_device
 from .mpi_setup import mpi_rank
 

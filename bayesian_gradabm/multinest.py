@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from torch_june import TorchJune
+from grad_june import TorchJune
 from .utils import read_fortran_data_file, set_attribute
 from .base import InferenceEngine
 
