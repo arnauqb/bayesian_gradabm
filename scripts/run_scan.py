@@ -13,6 +13,7 @@ f = str(args.file)
 
 n_devices = 2
 cuda_device = i % 5
+gpu = True
 
 
 lr_range = [1e-2, 1e-3, 1e-4]
@@ -30,9 +31,10 @@ for lr in lr_range:
                 if i != j:
                     j += 1
                     continue
-                print(cuda_device)
                 name = f"/{lr}_{batch}_{hidden_size}_{k}"
                 params = deepcopy(base_params)
+                if gpu:
+                    params["device"] = f"cuda{cuda_device}"
                 params["results_path"] += name
                 params["training"]["n_batch"] = batch
                 params["training"]["optimizer"]["lr"] = lr
