@@ -3,26 +3,18 @@ import corner
 import numpy as np
 import torch
 import shutil
+import pandas as pd
+from collections import defaultdict
 from time import time
 from tqdm import tqdm
 import os
 import matplotlib.pyplot as plt
 from copy import deepcopy
-import torch.distributed as dist
-import torch.multiprocessing as mp
-from torch.nn.parallel import DistributedDataParallel as DDP
 
 from .base import InferenceEngine
-from .utils import set_attribute
-
-from .mpi_setup import mpi_rank, mpi_comm, mpi_size
 
 
 class NormFlows(InferenceEngine):
-    @classmethod
-    def read_parameters_to_fit(cls, params):
-        return params["parameters_to_fit"]
-
     def _make_dirs(self):
         self.posteriors_path = self.results_path / "posteriors"
         self.fits_path = self.results_path / "fits"
@@ -34,7 +26,7 @@ class NormFlows(InferenceEngine):
             shutil.rmtree(self.fits_path)
         self.fits_path.mkdir(parents=True)
 
-    def _setup_flow(self, rank):
+    def _setup_flow(self):
         flow_config = deepcopy(self.training_configuration["flow"])
         K = flow_config.pop("K")
         flows = []
@@ -44,9 +36,8 @@ class NormFlows(InferenceEngine):
                 flow = flow_class(**flow_config[flow_name])
                 flows.append(flow)
         q0 = nf.distributions.DiagGaussian(len(self.priors), trainable=False)
-        self.nfm = nf.NormalizingFlow(q0=q0, flows=flows)
-        self.nfm = self.nfm.to(self.device)
-        self.nfm = DDP(self.nfm, device_ids=[rank])
+        self.flow = nf.NormalizingFlow(q0=q0, flows=flows)
+        self.flow = self.flow.to(self.device)
 
     def _get_optimizer_and_scheduler(self):
         config = deepcopy(self.training_configuration["optimizer"])
@@ -60,7 +51,7 @@ class NormFlows(InferenceEngine):
         else:
             gamma = 1.0
         optimizer_class = getattr(torch.optim, optimizer_type)
-        optimizer = optimizer_class(self.nfm.parameters(), **config)
+        optimizer = optimizer_class(self.flow.parameters(), **config)
         scheduler = torch.optim.lr_scheduler.MultiStepLR(
             optimizer, milestones=milestones, gamma=gamma
         )
@@ -73,13 +64,10 @@ class NormFlows(InferenceEngine):
         return loss
 
     def _plot_posterior(self, it):
-        posteriors = self.nfm.sample(10000)
+        posteriors = self.flow.sample(10000)
         samples = posteriors[0].cpu().detach().numpy()
-        samples = np.where(~np.isnan(samples), samples, 0)
-        samples = np.where(~np.isinf(samples), samples, 0)
-        samples = np.where(np.abs(samples) < 5, samples, 0)
         labels = [name.split(".")[-2] for name in self.priors]
-        true_values = [1.5, 2.0]
+        true_values = [1.0, 1.0]
         f = corner.corner(
             samples,
             labels=labels,
@@ -87,7 +75,7 @@ class NormFlows(InferenceEngine):
             truths=true_values,
             show_titles=True,
             bins=30,
-            range=[(-4, 4) for i in range(len(true_values))],
+            range=[(0, 2) for i in range(len(true_values))],
         )
         f.savefig(
             self.results_path / f"posteriors/posterior_{it:03d}.png",
@@ -129,93 +117,90 @@ class NormFlows(InferenceEngine):
         f.savefig(self.results_path / "loss.png", dpi=150)
         return
 
-    def _get_score(self, params, loss_fn, n_samples):
-        params = torch.clip(params, min=-5, max=5)
-        for i, name in enumerate(self.priors):
-            set_attribute(self.runner, name, params[i].to(self.device))
-        results, _ = self.runner()
-        for key in self.data_observable:
-            time_stamps = self.data_observable[key]["time_stamps"]
-            if time_stamps == "all":
-                time_stamps = range(len(results["dates"]))
-            y = results[key][time_stamps]
-            y_obs = self.observed_data[key][time_stamps]
-            loss_i = loss_fn(y, y_obs) / n_samples
-        loss_i.backward()
-        return loss_i
-
-    def _get_forecast_score(self, loss_fn, n_samples=5):
-        # mpi_comm.Barrier()
-        # params_list = mpi_comm.bcast(params_list, root=0)
-        # params_list, _ = self.nfm.sample(n_samples)
+    def get_forecast_score(self, flow, true_data, loss_fn, n_samples=5):
+        loss = 0.0
         for i in range(n_samples):
-            if i % mpi_size == mpi_rank:
-                params = params_list[i]
-                loss_i = self._get_score(params, loss_fn, n_samples)
-                loss += loss_i
-        # mpi_comm.Barrier()
-        # losses = mpi_comm.gather(loss, root=0)
-        # if mpi_rank == 0:
-        #    losses = [loss.to(self.device) for loss in losses]
-        #    losses = torch.hstack(losses)
-        #    loss = torch.sum(losses)
-        #    return loss
-        # else:
-        #    return None
-        return loss
+            sample, lp = flow.sample()
+            samples_dict = {}
+            for i, key in enumerate(self.priors):
+                samples_dict[key] = sample[0][i]
+            cases_per_timestep = (
+                self.evaluate(samples_dict)["cases_per_timestep"] / self.runner.n_agents
+            )
+            loss += loss_fn(cases_per_timestep, true_data)
+        return loss / n_samples
 
-    def compute_score(self, rank, size, loss_fn, n_samples):
-        loss = 0
-        params_to_run = []
-        for i in range(n_samples):
-            dest_rank = i % size
-            if rank == dest_rank:
-                params, _ = self.nfm.sample()
-                print(f"I am rank {rank} and have params {params}")
+    def get_regularisation(self, flow, n_samples=5):
+        samples, flow_lps = flow.sample(n_samples)
+        prior_lps = torch.zeros(samples.shape)
+        for i, key in enumerate(self.priors):
+            prior_dist = self.priors[key]
+            prior_lps[:, i] = prior_dist.log_prob(samples[:, i])
+        prior_lps = prior_lps.sum(1)
+        kl = torch.mean(flow_lps - prior_lps)
+        return kl
 
-            #if rank == 0:
-            #    params, _ = self.nfm.sample()
-            #    params = params[0].to("cpu")
-            #    if dest_rank != 0:
-            #        dist.send(tensor=params, dst=dest_rank)
-            #    else:
-            #        params_to_run.append(params)
-            #elif (dest_rank == rank):
-            #    params = torch.zeros(2)
-            #    dist.recv(tensor=params, src=0)
-            #    params_to_run.append(params)
-        #print(f"I am rank {rank} and have params {params_to_run}")
-        #print("---------")
-
-    def run(self, rank, size):
-        max_iter = self.training_configuration["n_steps"]
+    def run(self):
+        # Train model
+        self._setup_flow()
+        n_params_train = sum([len(a) for a in list(self.flow.parameters())])
+        print(f"Training {n_params_train} parameters")
+        optimizer, scheduler = self._get_optimizer_and_scheduler()
         loss_fn = self._get_loss()
-        n_samples = 10
-        self._setup_flow(rank)
-        if rank == 0:
-            self._make_dirs()
-            optimizer, scheduler = self._get_optimizer_and_scheduler()
-            best_loss = np.inf
-            loss_hist = []
+        n_epochs = self.training_configuration["n_epochs"]
+        n_batch = self.training_configuration["n_batch"]
+        n_samples_reg = 10
+        w = 0.0
+        true_data = self.observed_data["cases_per_timestep"] / self.runner.n_agents
+        iterator = tqdm(range(n_epochs))
+        losses = defaultdict(list)
+        best_loss = torch.inf
+        for it in iterator:
+            optimizer.zero_grad()
+            forecast_loss = self.get_forecast_score(
+                flow=self.flow,
+                true_data=true_data,
+                loss_fn=loss_fn,
+                n_samples=n_batch,
+            )
+            reglrise_loss = self.get_regularisation(
+                flow=self.flow, n_samples=n_samples_reg
+            )
+            loss = forecast_loss + w * reglrise_loss
+            losses["forecast_train"].append(forecast_loss.item())
+            losses["reglrise_train"].append(reglrise_loss.item())
+            if torch.isnan(loss):
+                print("loss is nan!")
+                break
+            loss.backward()
+            optimizer.step()
+            with torch.no_grad():
+                val_forecast_loss = self.get_forecast_score(
+                    flow=self.flow,
+                    true_data=true_data,
+                    loss_fn=loss_fn,
+                    n_samples=n_batch,
+                )
+                val_reglrise_loss = self.get_regularisation(
+                    flow=self.flow, n_samples=n_samples_reg
+                )
+                val_loss = val_forecast_loss + w * val_reglrise_loss
 
-        for it in tqdm(range(max_iter)):
-            if rank == 0:
-                optimizer.zero_grad()
+                losses["forecast_val"].append(val_forecast_loss.item())
+                losses["reglrise_val"].append(val_reglrise_loss.item())
 
-            score = self.compute_score(rank, size, loss_fn, n_samples)
-            #if rank == 0:
-            #    optimizer.step()
-            #    loss_hist.append(score.item())
-            #    if score.item() < best_loss:
-            #        torch.save(self.nfm.state_dict(), "./best_model.pth")
-            #        best_loss = score.item()
-
-    # def run(self):
-    # size = 2
-    # processes = []
-    # for rank in range(size):
-    #    p = mp.Process(target=self.run_rank, args=(rank, size))
-    #    p.start()
-    #    processes.append(p)
-    # for p in processes:
-    #    p.join()
+                if val_loss.item() < best_loss:
+                    torch.save(
+                        self.flow.state_dict(), self.results_path / "best_model.pth"
+                    )
+                    best_loss = val_loss.item()
+                iterator.set_postfix(
+                    {
+                        "fl": forecast_loss.item(),
+                        "rl": reglrise_loss.item(),
+                        "val loss": val_loss.item(),
+                        "best val loss": best_loss,
+                    }
+                )
+            df = pd.DataFrame(losses)
+            df.to_csv(self.results_path / "losses.csv")

@@ -1,7 +1,5 @@
 title: Normalizing flows example configuration file.
 
-  #device: ["cuda:0", "cuda:1", "cuda:2", "cuda:3"]
-  #device: ["cuda:0", "cuda:1", "cuda:2", "cuda:3", "cuda:4", "cuda:5", "cuda:6", "cuda:7"]
 device: ["cpu"]
 
 june_configuration_file: "./configs/june.yaml"
@@ -9,19 +7,27 @@ june_configuration_file: "./configs/june.yaml"
 results_path: "./results/normflows"
 
 parameters_to_fit:
-  - model.infection_networks.networks.company.log_beta
-  - model.infection_networks.networks.school.log_beta
+  model.infection_networks.networks.company.log_beta:
+    prior:
+      dist: Normal
+      loc: 1.0
+      scale: 1.0
+  model.infection_networks.networks.school.log_beta:
+    prior:
+      dist: Normal
+      loc: 1.0
+      scale: 1.0
 
 
 training:
-  n_steps: 250
-  n_samples: 25
+  n_epochs: 250
+  n_batch: 1
   loss:
     type: MSELoss
     reduction: mean
   optimizer:
     type: Adam
-    lr: 0.0001
+    lr: 0.001
       #betas: [0.95, 0.999]
     milestones: []
     gamma: 0.2
@@ -37,21 +43,5 @@ training:
 data:
   observed_data: "./results/june/results.csv"
   observable: 
-    #cases_per_timestep:
-    #  time_stamps: "all"
-    cases_by_age_18:
-      time_stamps: "all"
-    cases_by_age_25:
-      time_stamps: "all"
-    cases_by_age_35:
-      time_stamps: "all"
-    cases_by_age_45:
-      time_stamps: "all"
-    cases_by_age_55:
-      time_stamps: "all"
-    cases_by_age_65:
-      time_stamps: "all"
-    cases_by_age_75:
-      time_stamps: "all"
-    cases_by_age_100:
+    cases_per_timestep:
       time_stamps: "all"

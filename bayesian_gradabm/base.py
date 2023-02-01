@@ -7,7 +7,7 @@ import torch
 from pathlib import Path
 import pyro.distributions as dist
 
-from torch_june import Runner
+from grad_june import Runner
 from .utils import get_attribute, set_attribute, read_device
 from .mpi_setup import mpi_rank
 
@@ -36,8 +36,6 @@ class InferenceEngine(ABC):
     def from_file(cls, fpath):
         with open(fpath, "r") as f:
             params = yaml.safe_load(f)
-        # reads mpi setup
-        #params["device"] = read_device(params["device"])
         return cls.from_parameters(params)
 
     @classmethod
@@ -98,7 +96,7 @@ class InferenceEngine(ABC):
     def evaluate(self, samples):
         with torch.no_grad():
             for param_name in samples:
-                set_attribute(self.runner.model, param_name, samples[param_name])
+                set_attribute(self.runner, param_name, samples[param_name])
         results,_ = self.runner()
         return results
 
