@@ -147,7 +147,7 @@ def train(
     loss_fn = torch.nn.MSELoss(reduction="mean")
 
     n_epochs = 1000
-    n_samples_per_epoch = int(args.batch)
+    n_samples_per_epoch = batch_size
     n_samples_reg = 10
 
     w = 0.0  # torch.tensor(1.0, requires_grad=True)
@@ -199,7 +199,8 @@ def train(
                 }
             )
         df = pd.DataFrame(losses)
-        df.to_csv("./losses.csv")
+        name = f"losses_{ntransforms}_{batch_size}_{hidden_size}_{lr}.csv"
+        df.to_csv(name)
 
 
 train(
