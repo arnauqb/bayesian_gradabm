@@ -11,13 +11,13 @@ args = parser.parse_args()
 i = int(args.index)
 f = str(args.file)
 
-n_devices = 2
-cuda_device = i % 5
+n_devices = 10
+cuda_device = i % n_devices
 gpu = True
 
 
-lr_range = [1e-2, 1e-3, 1e-4]
-batch_range = [1, 5, 10]
+lr = 1e-4
+batch = 10
 hidden_size_range = [16, 32, 64, 128]
 k_range = [2, 4, 8, 16]
 
@@ -34,7 +34,9 @@ for lr in lr_range:
                 name = f"/{lr}_{batch}_{hidden_size}_{k}"
                 params = deepcopy(base_params)
                 if gpu:
-                    params["device"] = f"cuda{cuda_device}"
+                    params["device"] = f"cuda:{cuda_device}"
+                else:
+                    params["device"] = "cpu"
                 params["results_path"] += name
                 params["training"]["n_batch"] = batch
                 params["training"]["optimizer"]["lr"] = lr

@@ -10,12 +10,17 @@ parameters_to_fit:
   model.infection_networks.networks.company.log_beta:
     prior:
       dist: Normal
-      loc: 1.0
+      loc: 0.0
       scale: 1.0
   model.infection_networks.networks.school.log_beta:
     prior:
       dist: Normal
-      loc: 1.0
+      loc: 0.0
+      scale: 1.0
+  model.infection_networks.networks.household.log_beta:
+    prior:
+      dist: Normal
+      loc: 0.0
       scale: 1.0
 
 
@@ -34,11 +39,11 @@ training:
   flow:
     K: 8
     AutoregressiveRationalQuadraticSpline:
-      num_input_channels: 2
+      num_input_channels: 3
       num_blocks: 2
       num_hidden_channels: 64
     LULinearPermute:
-      num_channels: 2
+      num_channels: 3
 
 data:
   observed_data: "./results/june/results.csv"

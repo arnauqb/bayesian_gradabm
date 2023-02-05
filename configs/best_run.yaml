@@ -1,5 +1,5 @@
-data_path: /Users/arnull/code/gradabm-june/worlds/data_camden.pkl
-  #data_path: /cosma7/data/dp004/dc-quer1/torch_june_worlds/data_london_full.pkl
+#data_path: /Users/arnull/code/gradabm-june/worlds/data_camden.pkl
+data_path: /cosma7/data/dp004/dc-quer1/torch_june_worlds/data_camden.pkl
 infection_seed:
   log_fraction_initial_cases: -2.9645605
 leisure:
@@ -225,17 +225,17 @@ networks:
   cinema:
     log_beta: 0.7523964
   company:
-    log_beta: 0.3428555
+    log_beta: 1.0 #0.3428555
   grocery:
     log_beta: 0.7523964
   gym:
     log_beta: 0.7523964
   household:
-    log_beta: 0.30810425
+    log_beta: 1.0 #0.30810425
   pub:
     log_beta: 0.7523964
   school:
-    log_beta: 0.4572914
+    log_beta: 1.0 #0.4572914
   university:
     log_beta: 0.34417054
   visit:
@@ -418,7 +418,7 @@ symptoms:
   - critical
   - dead
 system:
-  device: cpu
+  device: cuda:0
   random_seed: random
 timer:
   initial_day: '2020-03-01'

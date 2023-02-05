@@ -173,6 +173,7 @@ def train(
         loss.backward()
 
         optimizer.step()
+        name = f"model_{ntransforms}_{batch_size}_{hidden_size}_{lr}"
 
         with torch.no_grad():
             val_forecast_loss = get_forecast_score(
@@ -188,7 +189,7 @@ def train(
             losses["reglrise_val"].append(val_reglrise_loss.item())
 
             if val_loss.item() < best_loss:
-                torch.save(flow.state_dict(), "./best_model.pth")
+                torch.save(flow.state_dict(), name + ".pth")
                 best_loss = val_loss.item()
             iterator.set_postfix(
                 {
@@ -199,8 +200,7 @@ def train(
                 }
             )
         df = pd.DataFrame(losses)
-        name = f"losses_{ntransforms}_{batch_size}_{hidden_size}_{lr}.csv"
-        df.to_csv(name)
+        df.to_csv("losses_" + name + ".csv")
 
 
 train(

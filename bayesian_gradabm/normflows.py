@@ -132,7 +132,7 @@ class NormFlows(InferenceEngine):
 
     def get_regularisation(self, flow, n_samples=5):
         samples, flow_lps = flow.sample(n_samples)
-        prior_lps = torch.zeros(samples.shape)
+        prior_lps = torch.zeros(samples.shape, device=self.device)
         for i, key in enumerate(self.priors):
             prior_dist = self.priors[key]
             prior_lps[:, i] = prior_dist.log_prob(samples[:, i])

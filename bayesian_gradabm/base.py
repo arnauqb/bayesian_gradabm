@@ -5,11 +5,10 @@ import pickle
 import sys
 import torch
 from pathlib import Path
-import pyro.distributions as dist
+import torch.distributions as dist
 
 from grad_june import Runner
 from .utils import get_attribute, set_attribute, read_device
-from .mpi_setup import mpi_rank
 
 
 class InferenceEngine(ABC):
@@ -42,7 +41,7 @@ class InferenceEngine(ABC):
     def from_parameters(cls, parameters):
         with open(parameters["june_configuration_file"], "r") as f:
             june_params = yaml.safe_load(f)
-        device = parameters["device"][mpi_rank]
+        device = parameters["device"]
         june_params["system"]["device"] = device
         runner = Runner.from_parameters(june_params)
         priors = cls.read_parameters_to_fit(parameters)
@@ -66,6 +65,10 @@ class InferenceEngine(ABC):
         for key in parameters_to_fit:
             dist_info = parameters_to_fit[key]["prior"]
             dist_class = getattr(dist, dist_info.pop("dist"))
+            dist_info = {
+                key: torch.tensor(dist_info[key], device=params["device"])
+                for key in dist_info
+            }
             ret[key] = dist_class(**dist_info)
         return ret
 
@@ -97,7 +100,7 @@ class InferenceEngine(ABC):
         with torch.no_grad():
             for param_name in samples:
                 set_attribute(self.runner, param_name, samples[param_name])
-        results,_ = self.runner()
+        results, _ = self.runner()
         return results
 
     def save_results(self, path):
