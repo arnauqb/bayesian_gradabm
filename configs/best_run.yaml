@@ -226,17 +226,17 @@ networks:
   cinema:
     log_beta: 0.7523964
   company:
-    log_beta: 1.0 #0.3428555
+    log_beta: 0.3428555
   grocery:
     log_beta: 0.7523964
   gym:
     log_beta: 0.7523964
   household:
-    log_beta: 1.0 #0.30810425
+    log_beta: 0.30810425
   pub:
     log_beta: 0.7523964
   school:
-    log_beta: 1.0 #0.4572914
+    log_beta: 0.4572914
   university:
     log_beta: 0.34417054
   visit:

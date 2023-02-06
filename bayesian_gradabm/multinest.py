@@ -68,7 +68,7 @@ class MultiNest(InferenceEngine):
             for param_name in samples:
                 if param_name == "model.infection_networks.networks.leisure.log_beta":
                     for _name in ["pub", "grocery", "gym", "cinema", "visit"]:
-                        name = param_name.split()
+                        name = param_name.split(".")
                         name[3] = _name
                         name = ".".join(name)
                         set_attribute(self.runner, name, samples[param_name])

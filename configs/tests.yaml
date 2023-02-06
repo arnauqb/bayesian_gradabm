@@ -1,5 +1,6 @@
-#data_path: /Users/arnull/code/gradabm-june/worlds/data_camden.pkl
-data_path: /cosma7/data/dp004/dc-quer1/torch_june_worlds/data_camden.pkl
+data_path: /Users/arnull/code/gradabm-june/worlds/data_camden.pkl
+#data_path: /Users/arnull/code/gradabm-june/test/data/data.pkl
+#data_path: /cosma7/data/dp004/dc-quer1/torch_june_worlds/data_camden.pkl
 infection_seed:
   log_fraction_initial_cases: -2.9645605
 leisure:
@@ -219,27 +220,27 @@ leisure:
         9-15: 0.5535
 networks:
   care_home:
-    log_beta: 1.3054601
+    log_beta: 0.6
   care_visit:
-    log_beta: 0.46661767
+    log_beta: 0.6
   cinema:
-    log_beta: 0.7523964
+    log_beta: 0.5
   company:
-    log_beta: 1.0 #0.3428555
+    log_beta: 0.25
   grocery:
-    log_beta: 0.7523964
+    log_beta: 0.5
   gym:
-    log_beta: 0.7523964
+    log_beta: 0.5
   household:
-    log_beta: 1.0 #0.30810425
+    log_beta: 0.6
   pub:
-    log_beta: 0.7523964
+    log_beta: 0.5
   school:
-    log_beta: 1.0 #0.4572914
+    log_beta: 0.4
   university:
-    log_beta: 0.34417054
+    log_beta: 0.3
   visit:
-    log_beta: 0.7523964
+    log_beta: 0.5
 parameters_to_calibrate:
   log_fraction_initial_cases:
     max_value: -2.5
@@ -418,7 +419,7 @@ symptoms:
   - critical
   - dead
 system:
-  device: cuda:0
+  device: cpu
   random_seed: random
 timer:
   initial_day: '2020-03-01'
@@ -451,7 +452,7 @@ timer:
       0: 24
     weekend:
       0: 24
-  total_days: 10
+  total_days: 50
 title: Torch June default configuration file.
 transmission:
   max_infectiousness:
