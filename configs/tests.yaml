@@ -428,23 +428,23 @@ timer:
       - company
       - school
       - university
-      #- pub
+      - pub
       - grocery
-      #- gym
-      #- cinema
-      #- visit
-      #- care_visit
-      #- care_home
+      - gym
+      - cinema
+      - visit
+      - care_visit
+      - care_home
       - household
     weekend:
       0:
-      #- pub
+      - pub
       - grocery
-      #- gym
-      #- cinema
-      #- visit
-      #- care_visit
-      #- care_home
+      - gym
+      - cinema
+      - visit
+      - care_visit
+      - care_home
       - household
   step_duration:
     weekday:

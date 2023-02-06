@@ -82,12 +82,17 @@ class InferenceEngine(ABC):
         return ret
 
     def _set_initial_parameters(self):
+        names_to_save = []
         with torch.no_grad():
-            names_to_save = []
             for param_name in self.priors:
-                set_attribute(
-                    self.runner.model, param_name, self.priors[param_name].mean()
-                )
+                if param_name == "model.infection_networks.networks.leisure.log_beta":
+                    for _name in ["pub", "grocery", "gym", "cinema", "visit"]:
+                        name = param_name.split(".")
+                        name[3] = _name
+                        name = ".".join(name)
+                        set_attribute(self.runner, name, self.priors[param_name].mean())
+                else:
+                    set_attribute(self.runner, param_name, self.priors[param_name].mean())
                 names_to_save.append(param_name)
         return names_to_save
 
@@ -97,11 +102,7 @@ class InferenceEngine(ABC):
         return results_path
 
     def evaluate(self, samples):
-        with torch.no_grad():
-            for param_name in samples:
-                set_attribute(self.runner, param_name, samples[param_name])
-        results, _ = self.runner()
-        return results
+        raise NotImplementedError
 
     def save_results(self, path):
         raise NotImplementedError
