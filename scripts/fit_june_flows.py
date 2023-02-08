@@ -8,81 +8,59 @@ import pandas as pd
 from collections import defaultdict
 import numpy as np
 import argparse
+from pathlib import Path
+import matplotlib.pyplot as plt
 
 from grad_june import Runner
 
-parser = argparse.ArgumentParser(prog="Fit June with flows")
-parser.add_argument("-K", "--ntransforms")
-parser.add_argument("-L", "--lr")
-parser.add_argument("-B", "--batch")
-parser.add_argument("-S", "--hidden_size")
-parser.add_argument("-d", "--device")
-args = parser.parse_args()
-
-device = str(args.device)
-
-true_parameters = {}
-# true_parameters = {
-#  "care_home":
-#    {"log_beta": 1.3054601},
-#  "care_visit":
-#    {"log_beta": 0.46661767},
-#  "cinema":
-#    {"log_beta": 0.7523964},
-#  "company":
-#    {"log_beta": 0.3428555},
-#  "grocery":
-#    {"log_beta": 0.7523964},
-#  "gym":
-#    {"log_beta": 0.7523964},
-#  "household":
-#    {"log_beta": 0.30810425},
-#  "pub":
-#    {"log_beta": 0.7523964},
-#  "school":
-#    {"log_beta": 0.4572914},
-#  "university":
-#    {"log_beta": 0.34417054},
-#  "visit":
-#    {"log_beta": 0.7523964},
-# }
-true_parameters["household"] = {"log_beta": 1.0}
-true_parameters["company"] = {"log_beta": 1.0}
-true_parameters["school"] = {"log_beta": 1.0}
-# true_parameters["pub"] = {"log_beta" : 1.0}
-# true_parameters["visit"] = {"log_beta" : 1.0}
-
-n_true_parameters = len(true_parameters)
-true_values = np.array([true_parameters[key]["log_beta"] for key in true_parameters])
-param_names = list(true_parameters.keys())
-
-params = yaml.safe_load(open("./configs/best_run.yaml"))
-params["timer"]["total_days"] = 10
-params["system"]["device"] = device
-# params["data_path"] = "/cosma7/data/dp004/dc-quer1/torch_june_worlds/data_camden.pkl"
-params["data_path"] = "/Users/arnull/code/gradabm-june/test/data/data.pkl"
+params_to_calibrate = ["household", "school", "company"]
+device = "cpu"
+n_epochs = 500
 
 
-for key in true_parameters:
-    params["networks"][key] = true_parameters[key]
-runner = Runner.from_parameters(params)
+def plot_posterior(nfm, param_names, truths=None, lims=(0, 2)):
+    with torch.no_grad():
+        samples, _ = nfm.sample(10000)
+        samples = samples - 2.0
+        samples = samples.cpu().numpy()
+        f = corner.corner(
+            samples,
+            labels=param_names,
+            smooth=2,
+            show_titles=True,
+            bins=30,
+            truths=truths,
+            range=[lims for i in range(len(params_to_calibrate))],
+        )
+    return f
 
-true_data = runner()[0]["cases_per_timestep"]
-n_people = runner.n_agents
-true_data = true_data / n_people
+
+def init_runner():
+    params = yaml.safe_load(open("../configs/tests.yaml"))
+    params["networks"]["household"]["log_beta"] = 1.0
+    params["networks"]["school"]["log_beta"] = 0.5
+    params["networks"]["company"]["log_beta"] = 0.25
+    for param in params["networks"]:
+        if param in params_to_calibrate:
+            continue
+        params["networks"][param]["log_beta"] = -1.0
+
+    true_values = [params["networks"][name]["log_beta"] for name in params_to_calibrate]
+    n_params = len(params_to_calibrate)
+    params["timer"]["total_days"] = 25
+    params["timer"]["initial_day"] = "2020-03-01"
+    params["system"]["device"] = device
+    # params["data_path"] = "../../data_camden.pkl"
+    params["data_path"] = "/Users/arnull/code/gradabm-june/worlds/data_camden.pkl"
+    runner = Runner.from_parameters(params)
+    return runner
 
 
-prior = torch.distributions.Normal(
-    torch.zeros(n_true_parameters, device=device),
-    torch.ones(n_true_parameters, device=device),
-)
-
-# Set up model
-
-# Define flows
-def setup_flow(K, hidden_size, device):
-    latent_size = len(true_values)
-    hidden_units = hidden_size
+def setup_flow():
+    K = 4
+    n_params = len(params_to_calibrate)
+    latent_size = n_params
+    hidden_units = 16
     hidden_layers = 2
     flows = []
     for i in range(K):
@@ -92,121 +70,119 @@ def setup_flow(K, hidden_size, device):
             )
         ]
         flows += [nf.flows.LULinearPermute(latent_size)]
-    # Set prior and q0
-    q0 = nf.distributions.DiagGaussian(len(true_values), trainable=False)
-    # Construct flow model
+    q0 = nf.distributions.DiagGaussian(n_params, trainable=False)
     flow = nf.NormalizingFlow(q0=q0, flows=flows)
-    # Move model on GPU if available
     flow = flow.to(device)
     return flow
 
 
-def run_model(sample):
-    # print(sample)
+def run_model(runner, sample):
     sample = sample.flatten()
-    for (j, name) in enumerate(true_parameters):
-        runner.model.infection_networks.networks[name].log_beta = sample[j]
-    cases_per_timestep = runner()[0]["cases_per_timestep"] / n_people
-    return cases_per_timestep
+    for (j, name) in enumerate(params_to_calibrate):
+        value_disp = sample[j] - 2.0
+        if name == "log_fraction_initial_cases":
+            runner.log_fraction_initial_cases = torch.minimum(
+                torch.tensor(0.0), value_disp
+            )
+        elif name == "leisure":
+            for _name in ["pub", "grocery", "gym", "cinema", "visit"]:
+                runner.model.infection_networks.networks[_name].log_beta = value_disp
+        else:
+            runner.model.infection_networks.networks[name].log_beta = value_disp
+    res, _ = runner()
+    return res
 
 
-def get_forecast_score(flow, true_data, loss_fn, n_samples=5):
+def get_forecast_score(runner, flow, true_res, loss_fn, n_samples=5):
     loss = 0.0
     for i in range(n_samples):
         sample, lp = flow.sample()
-        # print(sample)
-        cases_per_timestep = run_model(sample)
-        # print(cases_per_timestep)
-        loss += loss_fn(cases_per_timestep, true_data)
-        # print(loss)
+        res = run_model(runner, sample)
+        loss_i = loss_fn(
+            true_res["cases_per_timestep"] / runner.n_agents,
+            res["cases_per_timestep"] / runner.n_agents,
+        )
+        loss_i.backward()
+        loss += loss_i
     return loss / n_samples
 
 
-def get_regularisation(flow, n_samples=5):
+def get_regularisation(flow, prior, n_samples=5):
     samples, flow_lps = flow.sample(n_samples)
+    samples = samples - 2.0
     prior_lps = prior.log_prob(samples).sum(1)
     kl = torch.mean(flow_lps - prior_lps)
     return kl
 
 
-def train(
-    ntransforms,
-    lr,
-    batch_size,
-    hidden_size,
-    device,
-):
-    flow = setup_flow(K=ntransforms, hidden_size=hidden_size, device=device)
-    losses = defaultdict(list)
-    best_loss = np.inf
+def train(weight):
     # Train model
-
+    n_epochs = 1000
+    runner = init_runner()
+    true_res, _ = runner()
+    flow = setup_flow()
+    prior = torch.distributions.Normal(
+        torch.zeros(len(params_to_calibrate), device=device),
+        torch.ones(len(params_to_calibrate), device=device),
+    )
     parameters_to_optimize = list(flow.parameters())
+    true_values = [1.0, 0.5, 0.25]
     print(sum([len(a) for a in parameters_to_optimize]))
-    optimizer = torch.optim.Adam(parameters_to_optimize, lr=lr)
+    optimizer = torch.optim.Adam(parameters_to_optimize, lr=1e-3)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs)
     loss_fn = torch.nn.MSELoss(reduction="mean")
 
-    n_epochs = 1000
-    n_samples_per_epoch = batch_size
+    save_dir = Path(f"./weight_{weight}_second")
+    posteriors_dir = save_dir / "posteriors"
+    posteriors_dir.mkdir(exist_ok=True, parents=True)
+
+    n_samples_per_epoch = 5
     n_samples_reg = 10
 
-    w = 0.0  # torch.tensor(1.0, requires_grad=True)
+    w = weight
 
     iterator = tqdm(range(n_epochs))
+    losses = defaultdict(list)
+    best_loss = np.inf
 
     for it in iterator:
         optimizer.zero_grad()
         forecast_loss = get_forecast_score(
+            runner=runner,
             flow=flow,
-            true_data=true_data,
+            true_res=true_res,
             loss_fn=loss_fn,
             n_samples=n_samples_per_epoch,
         )
-        reglrise_loss = get_regularisation(flow=flow, n_samples=n_samples_reg)
-        loss = forecast_loss + w * reglrise_loss
+        reglrise_loss = get_regularisation(
+            flow=flow, prior=prior, n_samples=n_samples_reg
+        )
+        loss_reg = w * reglrise_loss
+        loss_reg.backward()
+        loss = forecast_loss + loss_reg
         losses["forecast_train"].append(forecast_loss.item())
         losses["reglrise_train"].append(reglrise_loss.item())
         # print(loss)
         if torch.isnan(loss):
             print("loss is nan!")
             break
-        loss.backward()
-
-        optimizer.step()
-        name = f"model_{ntransforms}_{batch_size}_{hidden_size}_{lr}"
-
-        with torch.no_grad():
-            val_forecast_loss = get_forecast_score(
-                flow=flow,
-                true_data=true_data,
-                loss_fn=loss_fn,
-                n_samples=n_samples_per_epoch,
-            )
-            val_reglrise_loss = get_regularisation(flow=flow, n_samples=n_samples_reg)
-            val_loss = val_forecast_loss + w * val_reglrise_loss
-
-            losses["forecast_val"].append(val_forecast_loss.item())
-            losses["reglrise_val"].append(val_reglrise_loss.item())
-
-            if val_loss.item() < best_loss:
-                torch.save(flow.state_dict(), name + ".pth")
-                best_loss = val_loss.item()
-            iterator.set_postfix(
-                {
-                    "fl": forecast_loss.item(),
-                    "rl": reglrise_loss.item(),
-                    "val loss": val_loss.item(),
-                    "best val loss": best_loss,
-                }
-            )
+        # loss.backward()
+        if loss.item() < best_loss:
+            torch.save(flow.state_dict(), save_dir / "best_model_data.pth")
+            best_loss = loss.item()
         df = pd.DataFrame(losses)
-        df.to_csv("losses_" + name + ".csv")
+        df.to_csv(save_dir / "losses_data.csv")
+        f = plot_posterior(flow, params_to_calibrate, truths=true_values, lims=(-2, 2))
+        f.savefig(
+            posteriors_dir / f"posterior_{it:03d}.png", dpi=150, bbox_inches="tight"
+        )
+        plt.close(f)
+        optimizer.step()
+        scheduler.step()
 
 
-train(
-    ntransforms=int(args.ntransforms),
-    lr=float(args.lr),
-    batch_size=int(args.batch),
-    hidden_size=int(args.hidden_size),
-    device=str(args.device),
-)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(prog="Fit June with flows")
+    parser.add_argument("-w", "--weight")
+    args = parser.parse_args()
+    train(weight=float(args.weight))
