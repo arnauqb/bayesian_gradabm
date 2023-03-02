@@ -1,6 +1,6 @@
 title: MultiNest example configuration file.
 
-device: "cpu"
+device: "cuda:0"
 june_configuration_file: "./configs/tests.yaml"
 
 results_path: "./results/multinest"

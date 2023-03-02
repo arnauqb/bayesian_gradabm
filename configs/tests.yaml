@@ -220,101 +220,13 @@ leisure:
         86-100: 0.0745
         9-15: 0.5535
 networks:
-  care_home:
-    log_beta: 0.5
-  care_visit:
-    log_beta: 0.25
-  cinema:
-    log_beta: 0.0 
-  company:
-    log_beta: -0.25 
-  grocery:
-    log_beta: 0.0 
-  gym:
-    log_beta: 0.0 
   household:
     log_beta: 0.5 
-  pub:
-    log_beta: 0.0 
+  company:
+    log_beta: 0.5 
   school:
     log_beta: 0.3
-  university:
-    log_beta: 0.1 
-  visit:
-    log_beta: 0.0 
-parameters_to_calibrate:
-  log_fraction_initial_cases:
-    max_value: -2.5
-    min_value: -3.0
-  model.infection_networks.networks.care_home.log_beta:
-    max_value: 1.5
-    min_value: 0.0
-  model.infection_networks.networks.care_visit.log_beta:
-    max_value: 1.0
-    min_value: 0.0
-  model.infection_networks.networks.company.log_beta:
-    max_value: 0.5
-    min_value: -0.5
-  model.infection_networks.networks.household.log_beta:
-    max_value: 1.25
-    min_value: 0.0
-  model.infection_networks.networks.leisure.log_beta:
-    max_value: 1.0
-    min_value: 0.0
-  model.infection_networks.networks.school.log_beta:
-    max_value: 0.5
-    min_value: 0.0
-  model.infection_networks.networks.university.log_beta:
-    max_value: 0.5
-    min_value: 0.0
-policies:
-  interaction:
-    social_distancing:
-      1:
-        beta_factors:
-          care_home: 0.8
-          care_visit: 0.8
-          cinema: 0.8
-          company: 0.8
-          grocery: 0.8
-          gym: 0.8
-          household: 0.8
-          pub: 0.8
-          school: 0.8
-          university: 0.8
-          visit: 0.8
-        end_date: 2020-03-24
-        start_date: 2020-03-16
-      2:
-        beta_factors:
-          care_home: 0.5
-          care_visit: 0.25
-          cinema: 0.0
-          company: 0.2
-          grocery: 0.3
-          gym: 0.0
-          household: 0.5
-          pub: 0.0
-          school: 0.1
-          university: 0.0
-          visit: 0.0
-        end_date: 2020-05-11
-        start_date: 2020-03-24
-      3:
-        beta_factors:
-          care_home: 0.6
-          care_visit: 0.25
-          cinema: 0.0
-          company: 0.4
-          grocery: 0.3
-          gym: 0.0
-          household: 0.6
-          pub: 0.0
-          school: 0.1
-          university: 0.0
-          visit: 0.0
-        end_date: 2999-01-01
-        start_date: 2020-05-11
+
 save_path: ./results/june
 symptoms:
   recovery_times:
@@ -427,26 +339,11 @@ timer:
   step_activities:
     weekday:
       0:
-      - company
       - school
-      - university
-      - pub
-      - grocery
-      - gym
-      - cinema
-      - visit
-      - care_visit
-      - care_home
+      - company
       - household
     weekend:
       0:
-      - pub
-      - grocery
-      - gym
-      - cinema
-      - visit
-      - care_visit
-      - care_home
       - household
   step_duration:
     weekday:
