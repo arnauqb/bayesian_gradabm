@@ -58,5 +58,8 @@ class StochVolSimulator(nn.Module):
             s = s + epsilons[t]
             obs_density = distributions.studentT.StudentT(nu, torch.tensor([0.]), torch.exp(s))
             obs = obs_density.rsample()
-            x[t] = obs*(1. + 5*sigma)
+            factor = 1.
+            if (t >= 50) and (t <= 65):
+                factor += 5.*sigma
+            x[t] = obs*factor
         return x
