@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from grad_june import TorchJune
+from grad_june import GradJune
 from .utils import read_fortran_data_file, set_attribute
 from .base import InferenceEngine
 
@@ -56,17 +56,27 @@ class MultiNest(InferenceEngine):
                 time_stamps = self.data_observable[key]["time_stamps"]
                 if time_stamps == "all":
                     time_stamps = range(len(y[key]))
-                # data = y[key]
                 data = y[key][time_stamps]
                 rel_error = self.data_observable[key]["error"]  * data
                 data_obs = self.observed_data[key][time_stamps]
-                #data_sq = torch.pow(data, 2.0)
-                #error = rel_error * torch.sqrt(torch.cumsum(data_sq, dim=0))
-                #error = torch.clamp(rel_error * data, min=1e-3)
                 error = rel_error + 10
                 l_ = likelihood_fn(data, error).log_prob(data_obs)
                 ret += l_.sum().cpu().item()
             return ret
+
+    def evaluate(self, samples):
+        with torch.no_grad():
+            for param_name in samples:
+                if param_name == "model.infection_networks.networks.leisure.log_beta":
+                    for _name in ["pub", "grocery", "gym", "cinema", "visit"]:
+                        name = param_name.split(".")
+                        name[3] = _name
+                        name = ".".join(name)
+                        set_attribute(self.runner, name, samples[param_name])
+                else:
+                    set_attribute(self.runner, param_name, samples[param_name])
+        results, _ = self.runner()
+        return results
 
     def run(self, **kwargs):
         self._set_initial_parameters()

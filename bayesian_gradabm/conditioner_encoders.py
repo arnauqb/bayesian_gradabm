@@ -21,5 +21,4 @@ class RNN(torch.nn.Module):
 
     def forward(self, x):
         x, _ = self.torch_rnn(x)
-        #return self.fc(x[:, 1, :])
-        return self.fc(x[0,:,:])
+        return self.fc(x[:, -1, :])

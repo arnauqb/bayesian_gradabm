@@ -8,3 +8,5 @@ with torch.no_grad():
 
 runner.save_results(results, is_infected)
 print(results["cases_per_timestep"])
+print(results["deaths_per_timestep"])
+
