@@ -70,10 +70,6 @@ def get_forecast_score(runner, flow, true_res, loss_fn, n_samples=5):
     for i in range(n_samples):
         sample = flow.rsample()
         res = run_model(runner, sample)
-        #loss_i = loss_fn(
-        #        true_res["cases_per_timestep"] / runner.n_agents,
-        #        res["cases_per_timestep"] / runner.n_agents,
-        #)
         loss_i = 0.0
         j = 0
         for key in res:

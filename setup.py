@@ -17,7 +17,7 @@ with open(join(this_dir, "requirements.txt")) as f:
 
 
 setup(
-    name="bayesian_gradabm",
+    name="birds",
     version="0.1.0",
     description="Inference algorithms for GradABM.",
     url="https://github.com/arnauqb/bayesian_gradabm",
