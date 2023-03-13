@@ -172,7 +172,7 @@ def infer(
             best_forecast_loss = forecast_loss.item()
             need_to_plot_posterior = True and save_best_posteriors
         df = pd.DataFrame(losses)
-        df.to_csv(save_dir / "losses_data.csv")
+        df.to_csv(save_dir / "losses_data.csv", index=False)
         if need_to_plot_posterior:
             _plot_posterior(
                 flow_cond=flow_cond,

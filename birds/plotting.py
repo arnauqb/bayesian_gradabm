@@ -1,7 +1,7 @@
 import torch
 import corner
 
-def plot_posterior(flow_cond, param_names=None, true_values=None, lims=(0, 2)):
+def plot_posterior(flow_cond, param_names=None, true_values=None, lims=None):
     with torch.no_grad():
         samples  = flow_cond.sample((10000,))
         samples = samples.cpu().numpy()
