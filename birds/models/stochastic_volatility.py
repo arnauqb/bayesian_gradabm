@@ -50,9 +50,6 @@ class StochVolSimulator(nn.Module):
         nu, tau = theta[0], theta[1]
         nu = torch.max(torch.tensor(0.5, device=nu.device), nu) # To avoid nans.
         tau = torch.max(torch.tensor(10, device=tau.device), tau) # To avoid nans.
-        #print("--------")
-        #print(nu)
-        #print(tau)
         epsilons = self._eps.rsample((self.T + 1,)) / tau
         x = torch.zeros(self.T + 1)
         s = 0.0
@@ -67,5 +64,4 @@ class StochVolSimulator(nn.Module):
             if (t >= 50) and (t <= 65):
                 factor += 5.0 * self.sigma
             x[t] = obs * factor
-        #print(x)
         return [x]
