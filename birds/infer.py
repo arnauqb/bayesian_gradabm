@@ -36,7 +36,10 @@ def _setup_loss(loss_name):
 
 def _setup_paths(save_dir):
     save_dir = Path(save_dir)
-    shutil.rmtree(save_dir)
+    try:
+        shutil.rmtree(save_dir)
+    except:
+        pass
     posteriors_dir = save_dir / "posteriors"
     posteriors_dir.mkdir(exist_ok=True, parents=True)
     return save_dir, posteriors_dir
