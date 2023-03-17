@@ -6,10 +6,10 @@ system:
 
 save_path: ./results/june
 
-  #data_path: /Users/arnull/code/gradabm-june/worlds/data_camden.pkl
+data_path: /Users/arnull/code/gradabm-june/worlds/data_camden.pkl
 #data_path: /home/coml0859/data_camden.pkl
 #data_path: /Users/arnull/code/gradabm-june/test/data/data.pkl
-data_path: /cosma7/data/dp004/dc-quer1/torch_june_worlds/data_camden.pkl
+#data_path: /cosma7/data/dp004/dc-quer1/torch_june_worlds/data_camden.pkl
 
 timer:
   initial_day: '2020-03-01'

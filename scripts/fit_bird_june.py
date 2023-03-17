@@ -5,7 +5,7 @@ import datetime
 import pandas as pd
 import yaml
 
-from birds import infer
+from birds.infer import infer, infer_fd
 from birds.models import BirdsJUNE
 
 from grad_june import Runner

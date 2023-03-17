@@ -25,9 +25,11 @@ def _setup_optimizer(model, flow, learning_rate, n_epochs):
 def _setup_loss(loss_name):
     if loss_name == "LogMSELoss":
         loss_fn = torch.nn.MSELoss(reduction="sum")
+
         def loss(x, y):
-            mask = (x > 0) & (y > 0) # remove points where log is not defined.
+            mask = (x > 0) & (y > 0)  # remove points where log is not defined.
             return loss_fn(torch.log10(x[mask]), torch.log10(y[mask]))
+
     elif loss_name == "MSELoss":
         loss_fn = torch.nn.MSELoss(reduction="sum")
         loss = lambda x, y: loss_fn(x, y)
@@ -47,9 +49,7 @@ def _setup_paths(save_dir):
     return save_dir, posteriors_dir
 
 
-def _get_forecast_score(
-    model, flow_cond, obs_data, loss_fn, n_samples
-):
+def _get_forecast_score(model, flow_cond, obs_data, loss_fn, n_samples):
     loss = 0.0
     for i in range(n_samples):
         params = flow_cond.rsample()
@@ -65,7 +65,6 @@ def _get_forecast_score(
             observation = obs_data[i]
             model_output = outputs_list[i]
             loss_i += loss_fn(observation, model_output)
-        loss_i.backward()
         loss += loss_i
     return loss / n_samples
 
@@ -163,20 +162,22 @@ def infer(
         losses["reglrise_train"].append(reglrise_loss.item())
         if torch.isnan(loss):
             raise ValueError("Loss is nan!")
-        #loss.backward()
+        loss.backward()
         torch.nn.utils.clip_grad_norm_(flow.parameters(), max_norm=1.0)
         if loss.item() < best_loss:
-            torch.save(
-                flow.state_dict(), save_dir / f"best_model_{it:04d}.pth"
-            )
+            torch.save(flow.state_dict(), save_dir / f"best_model_{it:04d}.pth")
             best_loss = loss.item()
-            need_to_plot_posterior = need_to_plot_posterior or (plot_posteriors == "best")
+            need_to_plot_posterior = need_to_plot_posterior or (
+                plot_posteriors == "best"
+            )
         if forecast_loss.item() < best_forecast_loss:
             torch.save(
                 flow.state_dict(), save_dir / f"best_model_forecast_{it:04d}.pth"
             )
             best_forecast_loss = forecast_loss.item()
-            need_to_plot_posterior = need_to_plot_posterior or (plot_posteriors == "best")
+            need_to_plot_posterior = need_to_plot_posterior or (
+                plot_posteriors == "best"
+            )
         df = pd.DataFrame(losses)
         df.to_csv(save_dir / "losses_data.csv", index=False)
         if need_to_plot_posterior:
@@ -185,7 +186,130 @@ def infer(
                 true_values=true_values,
                 posteriors_dir=posteriors_dir,
                 it=it,
-                **kwargs
+                **kwargs,
+            )
+        optimizer.step()
+        scheduler.step()
+
+
+def _get_forecast_score_fwd(model, params_list, obs_data, loss_fn, n_samples):
+    def aux_fun(params):
+        loss = 0.0
+        outputs_list = model(params)
+        try:
+            assert len(outputs_list) == len(obs_data)
+        except:
+            raise ValueError(
+                "Model results should be the same length as observed data."
+            )
+        for i in range(len(outputs_list)):
+            observation = obs_data[i]
+            model_output = outputs_list[i]
+            loss += loss_fn(observation, model_output)
+        return loss / n_samples
+
+    total_loss = 0.0
+    params_diff_total = 0.0
+    # Get Jacobian using Forward-diff
+    total_jacobian = torch.zeros(params_list[0].shape)
+    jacfwd = torch.func.jacfwd(aux_fun, 0, randomness="same")
+    for params in params_list:
+        # Compute ABM part with Forward-diff
+        total_loss += aux_fun(params.detach().clone())
+        jacobian = jacfwd(params.detach().clone()).to(torch.float)
+        # Use reverse diff for flow
+        params_diff_total += torch.dot(jacobian, params)
+    # Back-propagate to flow parameters
+    params_diff_total.backward(retain_graph=True)
+    return total_loss
+
+
+def _compute_forecast_loss_jacobian(
+    model, flow_cond, obs_data, loss_fn, n_samples, prior
+):
+    params = flow_cond.rsample((n_samples,))
+    #params_forecast = params.detach().clone()
+    forecast_loss = _get_forecast_score_fwd(
+        model=model,
+        params_list=params,
+        obs_data=obs_data,
+        loss_fn=loss_fn,
+        n_samples=n_samples,
+    )
+    return forecast_loss
+
+
+def infer_fd(
+    model: torch.nn.Module,
+    flow: zuko.flows.FlowModule,
+    prior: torch.distributions.Distribution,
+    obs_data: list[torch.Tensor],
+    n_epochs: int = 100,
+    n_samples_per_epoch: int = 10,
+    n_samples_regularization: int = 1000,
+    w: float = 0.5,
+    save_dir: str = "./results",
+    learning_rate: float = 1e-3,
+    loss: str = "LogMSELoss",
+    true_values: Optional[list] = None,
+    plot_posteriors: str = "every",
+    device="cpu",
+    **kwargs,
+):
+    r"""
+    Forward diff version of `infer`.
+    """
+    optimizer, scheduler = _setup_optimizer(model, flow, learning_rate, n_epochs)
+    loss_fn = _setup_loss(loss)
+    save_dir, posteriors_dir = _setup_paths(save_dir)
+    w = torch.tensor(w, requires_grad=True)
+    iterator = tqdm(range(n_epochs))
+    losses = defaultdict(list)
+    best_loss = np.inf
+    best_forecast_loss = np.inf
+    for it in iterator:
+        need_to_plot_posterior = plot_posteriors == "every"
+        flow_cond = flow(torch.zeros(1, device=device))
+        optimizer.zero_grad()
+        forecast_loss = _compute_forecast_loss_jacobian(
+            model,
+            flow_cond,
+            obs_data,
+            loss_fn,
+            n_samples_per_epoch,
+            prior,
+        )
+        reglrise_loss = w * _get_regularisation(
+            flow_cond=flow_cond, prior=prior, n_samples=n_samples_regularization
+        )
+        loss = forecast_loss + reglrise_loss
+        if torch.isnan(loss):
+            raise ValueError("Loss is nan!")
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(flow.parameters(), max_norm=1.0)
+        if loss.item() < best_loss:
+            torch.save(flow.state_dict(), save_dir / f"best_model_{it:04d}.pth")
+            best_loss = loss.item()
+            need_to_plot_posterior = need_to_plot_posterior or (
+                plot_posteriors == "best"
+            )
+        if forecast_loss.item() < best_forecast_loss:
+            torch.save(
+                flow.state_dict(), save_dir / f"best_model_forecast_{it:04d}.pth"
+            )
+            best_forecast_loss = forecast_loss.item()
+            need_to_plot_posterior = need_to_plot_posterior or (
+                plot_posteriors == "best"
+            )
+        df = pd.DataFrame(losses)
+        df.to_csv(save_dir / "losses_data.csv", index=False)
+        if need_to_plot_posterior:
+            _plot_posterior(
+                flow_cond=flow_cond,
+                true_values=true_values,
+                posteriors_dir=posteriors_dir,
+                it=it,
+                **kwargs,
             )
         optimizer.step()
         scheduler.step()
