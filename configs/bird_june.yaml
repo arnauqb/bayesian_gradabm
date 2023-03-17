@@ -6,21 +6,36 @@ system:
 
 save_path: ./results/june
 
-data_path: /Users/arnull/code/gradabm-june/worlds/data_camden.pkl
+  #data_path: /Users/arnull/code/gradabm-june/worlds/data_camden.pkl
 #data_path: /home/coml0859/data_camden.pkl
 #data_path: /Users/arnull/code/gradabm-june/test/data/data.pkl
-#data_path: /cosma7/data/dp004/dc-quer1/torch_june_worlds/data_camden.pkl
+data_path: /cosma7/data/dp004/dc-quer1/torch_june_worlds/data_camden.pkl
 
 timer:
   initial_day: '2020-03-01'
   step_activities:
     weekday:
       0:
-      - school
       - company
+      - school
+      - university
+      - pub
+      - grocery
+      - gym
+      - cinema
+      - visit
+      - care_visit
+      - care_home
       - household
     weekend:
       0:
+      - pub
+      - grocery
+      - gym
+      - cinema
+      - visit
+      - care_visit
+      - care_home
       - household
   step_duration:
     weekday:
@@ -35,10 +50,76 @@ networks:
   company:
     log_beta: 0.5 
   school:
-    log_beta: 0.3
+    log_beta: 0.5
+  university:
+    log_beta: 0.5 
+  pub:
+    log_beta: 0.5 
+  grocery:
+    log_beta: 0.5
+  gym:
+    log_beta: 0.5
+  visit:
+    log_beta: 0.5
+  cinema:
+    log_beta: 0.5
+  care_visit:
+    log_beta: 0.5
+  care_home:
+    log_beta: 0.5
 
 infection_seed:
   log_fraction_initial_cases: -3.0
+
+policies:
+  interaction:
+    social_distancing:
+      1:
+        beta_factors:
+          care_home: 0.8
+          care_visit: 0.8
+          cinema: 0.8
+          company: 0.8
+          grocery: 0.8
+          gym: 0.8
+          household: 0.8
+          pub: 0.8
+          school: 0.8
+          university: 0.8
+          visit: 0.8
+        end_date: 2020-03-24
+        start_date: 2020-03-16
+      2:
+        beta_factors:
+          care_home: 0.5
+          care_visit: 0.25
+          cinema: 0.0
+          company: 0.2
+          grocery: 0.3
+          gym: 0.0
+          household: 0.5
+          pub: 0.0
+          school: 0.1
+          university: 0.0
+          visit: 0.0
+        end_date: 2020-05-11
+        start_date: 2020-03-24
+      3:
+        beta_factors:
+          care_home: 0.6
+          care_visit: 0.25
+          cinema: 0.0
+          company: 0.4
+          grocery: 0.3
+          gym: 0.0
+          household: 0.6
+          pub: 0.0
+          school: 0.1
+          university: 0.0
+          visit: 0.0
+        end_date: 2999-01-01
+        start_date: 2020-05-11
+
 leisure:
   care_visit:
     weekday:

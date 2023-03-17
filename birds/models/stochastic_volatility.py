@@ -48,12 +48,15 @@ class StochVolSimulator(nn.Module):
         Assumes theta is shape (2,), with nu in first entry and tau in second
         """
         nu, tau = theta[0], theta[1]
-        nu = torch.max(torch.tensor(0.5, device=nu.device), nu) # To avoid nans.
-        tau = torch.max(torch.tensor(10, device=tau.device), tau) # To avoid nans.
+        nu = torch.max(torch.tensor(0.5, device=nu.device), nu)  # To avoid nans.
+        tau = torch.max(torch.tensor(10.0, device=tau.device), tau)  # To avoid nans.
         epsilons = self._eps.rsample((self.T + 1,)) / tau
         x = torch.zeros(self.T + 1)
         s = 0.0
         x.requires_grad_ = True
+        mask = torch.zeros(self.T + 1, dtype=int)
+        # to introduce miss-specification
+        mask[50:65] = 1
         for t in range(self.T + 1):
             s = s + epsilons[t]
             obs_density = distributions.studentT.StudentT(
@@ -61,7 +64,6 @@ class StochVolSimulator(nn.Module):
             )
             obs = obs_density.rsample()
             factor = 1.0
-            if (t >= 50) and (t <= 65):
-                factor += 5.0 * self.sigma
+            factor = factor + mask[t] * 5 * self.sigma
             x[t] = obs * factor
         return [x]

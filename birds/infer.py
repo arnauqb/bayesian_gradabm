@@ -24,10 +24,12 @@ def _setup_optimizer(model, flow, learning_rate, n_epochs):
 
 def _setup_loss(loss_name):
     if loss_name == "LogMSELoss":
-        loss_fn = torch.nn.MSELoss(reduction="mean")
-        loss = lambda x, y: loss_fn(torch.log10(x), torch.log10(y))
+        loss_fn = torch.nn.MSELoss(reduction="sum")
+        def loss(x, y):
+            mask = (x > 0) & (y > 0) # remove points where log is not defined.
+            return loss_fn(torch.log10(x[mask]), torch.log10(y[mask]))
     elif loss_name == "MSELoss":
-        loss_fn = torch.nn.MSELoss(reduction="mean")
+        loss_fn = torch.nn.MSELoss(reduction="sum")
         loss = lambda x, y: loss_fn(x, y)
     else:
         raise ValueError("Loss not supported")
@@ -47,7 +49,7 @@ def _setup_paths(save_dir):
 
 def _get_forecast_score(
     model, flow_cond, obs_data, loss_fn, n_samples
-):  # runner, flow, true_res, loss_fn, n_samples=5):
+):
     loss = 0.0
     for i in range(n_samples):
         params = flow_cond.rsample()
@@ -63,6 +65,7 @@ def _get_forecast_score(
             observation = obs_data[i]
             model_output = outputs_list[i]
             loss_i += loss_fn(observation, model_output)
+        loss_i.backward()
         loss += loss_i
     return loss / n_samples
 
@@ -97,7 +100,7 @@ def infer(
     learning_rate: float = 1e-3,
     loss: str = "LogMSELoss",
     true_values: Optional[list] = None,
-    save_best_posteriors: bool = False,
+    plot_posteriors: str = "every",
     device="cpu",
     **kwargs,
 ):
@@ -130,7 +133,7 @@ def infer(
     save_dir: Path to save results.
     true_values: (Optional) If known, true parameter values of the generating model. Will be shown in temporary plots.
     device: what device to use (cpu or cuda:0 etc.)
-    save_best_posteriors: Whether to save the best performing model predictions to the results folder.
+    plot_posteriors: When to save the posteriors. Options: "best" : only save when loss is improved, "every" save all, "never" : never save.
     **kwargs: Keyword arguments to be passed to model.
     """
     optimizer, scheduler = _setup_optimizer(model, flow, learning_rate, n_epochs)
@@ -142,7 +145,7 @@ def infer(
     best_loss = np.inf
     best_forecast_loss = np.inf
     for it in iterator:
-        need_to_plot_posterior = False
+        need_to_plot_posterior = plot_posteriors == "every"
         flow_cond = flow(torch.zeros(1, device=device))
         optimizer.zero_grad()
         forecast_loss = _get_forecast_score(
@@ -152,28 +155,28 @@ def infer(
             loss_fn=loss_fn,
             n_samples=n_samples_per_epoch,
         )
-        reglrise_loss = _get_regularisation(
+        reglrise_loss = w * _get_regularisation(
             flow_cond=flow_cond, prior=prior, n_samples=n_samples_regularization
         )
-        loss = forecast_loss + w * reglrise_loss
+        loss = forecast_loss + reglrise_loss
         losses["forecast_train"].append(forecast_loss.item())
         losses["reglrise_train"].append(reglrise_loss.item())
         if torch.isnan(loss):
             raise ValueError("Loss is nan!")
-        loss.backward()
-        # torch.nn.utils.clip_grad_norm_(flow_unc.parameters(), max_norm=1.0)
+        #loss.backward()
+        torch.nn.utils.clip_grad_norm_(flow.parameters(), max_norm=1.0)
         if loss.item() < best_loss:
             torch.save(
                 flow.state_dict(), save_dir / f"best_model_{it:04d}.pth"
             )
             best_loss = loss.item()
-            need_to_plot_posterior = True and save_best_posteriors
+            need_to_plot_posterior = need_to_plot_posterior or (plot_posteriors == "best")
         if forecast_loss.item() < best_forecast_loss:
             torch.save(
                 flow.state_dict(), save_dir / f"best_model_forecast_{it:04d}.pth"
             )
             best_forecast_loss = forecast_loss.item()
-            need_to_plot_posterior = True and save_best_posteriors
+            need_to_plot_posterior = need_to_plot_posterior or (plot_posteriors == "best")
         df = pd.DataFrame(losses)
         df.to_csv(save_dir / "losses_data.csv", index=False)
         if need_to_plot_posterior:

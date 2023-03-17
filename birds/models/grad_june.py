@@ -21,7 +21,12 @@ class BirdsJUNE(torch.nn.Module):
 
     def forward(self, params):
         for (j, name) in enumerate(self.params_to_calibrate):
-            self.runner.model.infection_networks.networks[name].log_beta = params[j]
+            if name == "seed":
+                self.runner.log_fraction_initial_cases = torch.min(
+                    torch.tensor(-1.0), params[j]
+                )
+            else:
+                self.runner.model.infection_networks.networks[name].log_beta = params[j]
         res, _ = self.runner()
         res["daily_deaths"] = self.runner.data.results["daily_deaths"]
         ret = []

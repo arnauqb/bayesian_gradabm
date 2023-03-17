@@ -11,6 +11,21 @@ from birds.models import BirdsJUNE
 from grad_june import Runner
 
 
+_all_parameters = [
+    "seed",
+    "household",
+    "company",
+    "school",
+    "university",
+    "pub",
+    "grocery",
+    "gym",
+    "cinema",
+    "visit",
+    "care_visit",
+    "care_home",
+]
+
 def load_data(path, start_date, n_days, data_to_calibrate, device):
     df = pd.read_csv(path, index_col=0)
     df.index = pd.to_datetime(df.index)
@@ -29,9 +44,16 @@ def setup_flow(n_parameters, device):
     return flow
 
 
-def setup_prior(n_parameters, device):
+def setup_prior(n_parameters, device, parameter_names):
+    means = []
+    for name in parameter_names:
+        if name == "seed":
+            means.append(-3.)
+        else:
+            means.append(0.)
+    means = torch.tensor(means, device=device)
     return torch.distributions.MultivariateNormal(
-        loc=torch.zeros(n_parameters, device=device),
+        loc=means,
         covariance_matrix=torch.eye(n_parameters, device=device),
     )
 
@@ -46,26 +68,36 @@ def setup_june_config(config_path, start_date, n_days, device):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="Fit June with flows")
-    parser.add_argument("--start_date", default="2020-03-01")
-    parser.add_argument("--n_days", default=75)
+    parser.add_argument("--start_date", default="2020-03-01", type=str)
+    parser.add_argument("--n_days", default=30, type=int)
     parser.add_argument(
-        "-p", "--parameters", nargs="+", default="household company school"
+        "-p", "--parameters", nargs="+", default="household school", type=str
     )
-    parser.add_argument("--data_calibrate", nargs="+", default="cases_per_timestep")
-    parser.add_argument("-d", "--device", default="cpu")
-    parser.add_argument("--data_path", default="./data/june_synth.csv")
-    parser.add_argument("--results_path", default="./results_june_birds")
-    parser.add_argument("--june_config", default="./configs/bird_june.yaml")
-    parser.add_argument("--n_epochs", default=100)
-    parser.add_argument("--n_samples_per_epoch", default=10)
-    parser.add_argument("--n_samples_regularization", default=1000)
-    parser.add_argument("--loss", default="LogMSELoss")
-    parser.add_argument("--lr", default=1e-3)
-    parser.add_argument("-w", "--weight", default=0.0)
+    parser.add_argument(
+        "--data_calibrate", nargs="+", default="cases_per_timestep", type=str
+    )
+    parser.add_argument("-d", "--device", default="cpu", type=str)
+    parser.add_argument("--data_path", default="./data/june_synth.csv", type=str)
+    parser.add_argument("--results_path", default="./results_june_birds", type=str)
+    parser.add_argument("--june_config", default="./configs/bird_june.yaml", type=str)
+    parser.add_argument("--n_epochs", default=100, type=int)
+    parser.add_argument("--n_samples_per_epoch", default=5, type=int)
+    parser.add_argument("--n_samples_regularization", default=10000, type=int)
+    parser.add_argument("--loss", default="LogMSELoss", type=str)
+    parser.add_argument("--lr", default=1e-3, type=float)
+    parser.add_argument("-w", "--weight", default=0.01, type=float)
     args = parser.parse_args()
 
-    parameters_to_calibrate = args.parameters.split(" ")
-    data_to_calibrate = args.data_calibrate.split(" ")
+    if type(args.parameters) != list:
+        parameters_to_calibrate = args.parameters.split(" ")
+    else:
+        parameters_to_calibrate = args.parameters
+    if parameters_to_calibrate == ["all"]:
+        parameters_to_calibrate = _all_parameters
+    if type(args.data_calibrate) != list:
+        data_to_calibrate = args.data_calibrate.split(" ")
+    else:
+        data_to_calibrate = args.data_calibrate
     print(f"Calibrating {parameters_to_calibrate} parameters.")
     print(f"Calibrating to {data_to_calibrate} data.")
     n_parameters = len(parameters_to_calibrate)
@@ -78,7 +110,7 @@ if __name__ == "__main__":
         parameters_to_calibrate=parameters_to_calibrate,
         data_to_calibrate=data_to_calibrate,
     )
-    prior = setup_prior(n_parameters, args.device)
+    prior = setup_prior(n_parameters, args.device, parameters_to_calibrate)
     flow = setup_flow(n_parameters, args.device)
     obs_data = load_data(
         args.data_path,
@@ -92,14 +124,15 @@ if __name__ == "__main__":
         flow=flow,
         prior=prior,
         obs_data=obs_data,
-        n_epochs=args.n_samples_per_epoch,
+        n_epochs=args.n_epochs,
         n_samples_per_epoch=args.n_samples_per_epoch,
         n_samples_regularization=args.n_samples_regularization,
         w=args.weight,
         save_dir=args.results_path,
         learning_rate=args.lr,
         loss=args.loss,
-        save_best_posteriors=True,
+        plot_posteriors="best",
         device=args.device,
+        true_values=None,
         lims=None,
     )
