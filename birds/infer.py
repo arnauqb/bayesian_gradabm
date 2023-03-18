@@ -285,7 +285,7 @@ def infer_fd(
         loss = forecast_loss + reglrise_loss
         if torch.isnan(loss):
             raise ValueError("Loss is nan!")
-        loss.backward()
+        #loss.backward()
         torch.nn.utils.clip_grad_norm_(flow.parameters(), max_norm=1.0)
         if loss.item() < best_loss:
             torch.save(flow.state_dict(), save_dir / f"best_model_{it:04d}.pth")
