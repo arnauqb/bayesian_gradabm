@@ -208,7 +208,7 @@ def infer(
             raise ValueError("Loss is nan!")
         if diff_mode == "reverse":
             loss.backward()
-        torch.nn.utils.clip_grad_norm_(flow.parameters(), max_norm=1.0)
+        #torch.nn.utils.clip_grad_norm_(flow.parameters(), max_norm=1.0)
         if loss.item() < best_loss:
             torch.save(flow.state_dict(), save_dir / f"best_model_{it:04d}.pth")
             best_loss = loss.item()

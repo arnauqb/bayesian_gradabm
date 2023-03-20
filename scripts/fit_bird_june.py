@@ -11,7 +11,6 @@ from birds.utils import fix_seed
 
 from grad_june import Runner
 
-
 _all_parameters = [
     "seed",
     "household",
@@ -41,7 +40,7 @@ def load_data(path, start_date, n_days, data_to_calibrate, device):
 
 
 def setup_flow(n_parameters, device):
-    flow = zuko.flows.NSF(n_parameters, 1, transforms=4, hidden_features=[64] * 3)
+    flow = zuko.flows.NSF(n_parameters, 1, transforms=3, hidden_features=[64] * 3)
     flow = flow.to(device)
     return flow
 
@@ -124,6 +123,7 @@ if __name__ == "__main__":
         data_to_calibrate,
         args.device,
     )
+    #with torch.autograd.detect_anomaly(check_nan=True):
     infer(
         model=model,
         flow=flow,
