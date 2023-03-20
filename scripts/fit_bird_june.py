@@ -7,6 +7,7 @@ import yaml
 
 from birds.infer import infer, infer_fd
 from birds.models import BirdsJUNE
+from birds.utils import fix_seed
 
 from grad_june import Runner
 
@@ -39,7 +40,7 @@ def load_data(path, start_date, n_days, data_to_calibrate, device):
 
 
 def setup_flow(n_parameters, device):
-    flow = zuko.flows.NSF(n_parameters, 1, transforms=3, hidden_features=[128] * 3)
+    flow = zuko.flows.NSF(n_parameters, 1, transforms=4, hidden_features=[64] * 3)
     flow = flow.to(device)
     return flow
 
@@ -67,6 +68,7 @@ def setup_june_config(config_path, start_date, n_days, device):
 
 
 if __name__ == "__main__":
+    fix_seed(0)
     parser = argparse.ArgumentParser(prog="Fit June with flows")
     parser.add_argument("--start_date", default="2020-03-01", type=str)
     parser.add_argument("--n_days", default=30, type=int)
@@ -86,6 +88,7 @@ if __name__ == "__main__":
     parser.add_argument("--loss", default="LogMSELoss", type=str)
     parser.add_argument("--lr", default=1e-3, type=float)
     parser.add_argument("-w", "--weight", default=0.01, type=float)
+    parser.add_argument("--diff_mode", default="rev", type=str)
     args = parser.parse_args()
 
     if type(args.parameters) != list:
@@ -119,7 +122,11 @@ if __name__ == "__main__":
         data_to_calibrate,
         args.device,
     )
-    infer_fd(
+    if args.diff_mode == "rev":
+        infer_func = infer
+    elif args.diff_mode == "fwd":
+        infer_func = infer_fd
+    infer_func(
         model=model,
         flow=flow,
         prior=prior,
@@ -131,7 +138,7 @@ if __name__ == "__main__":
         save_dir=args.results_path,
         learning_rate=args.lr,
         loss=args.loss,
-        plot_posteriors="best",
+        plot_posteriors="never",
         device=args.device,
         true_values=None,
         lims=None,

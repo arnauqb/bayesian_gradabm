@@ -28,7 +28,6 @@ class BirdsJUNE(torch.nn.Module):
             else:
                 self.runner.model.infection_networks.networks[name].log_beta = params[j]
         res, _ = self.runner()
-        res["daily_deaths"] = self.runner.data.results["daily_deaths"]
         ret = []
         for key in self.data_to_calibrate:
             ret.append(res[key])

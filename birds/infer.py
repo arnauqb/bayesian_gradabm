@@ -158,9 +158,11 @@ def infer(
             flow_cond=flow_cond, prior=prior, n_samples=n_samples_regularization
         )
         loss = forecast_loss + reglrise_loss
-        losses["forecast_train"].append(forecast_loss.item())
-        losses["reglrise_train"].append(reglrise_loss.item())
+        losses["forecast"].append(forecast_loss.item())
+        losses["reglrise"].append(reglrise_loss.item())
+        losses["total"].append(loss.item())
         if torch.isnan(loss):
+            torch.save(flow.state_dict(), save_dir / f"to_debug.pth")
             raise ValueError("Loss is nan!")
         loss.backward()
         torch.nn.utils.clip_grad_norm_(flow.parameters(), max_norm=1.0)
@@ -206,21 +208,22 @@ def _get_forecast_score_fwd(model, params_list, obs_data, loss_fn, n_samples):
             observation = obs_data[i]
             model_output = outputs_list[i]
             loss += loss_fn(observation, model_output)
-        return loss / n_samples
+        loss = loss / n_samples
+        return loss, loss # first is diffed, second is not.
 
-    total_loss = 0.0
-    params_diff_total = 0.0
     # Get Jacobian using Forward-diff
     total_jacobian = torch.zeros(params_list[0].shape)
-    jacfwd = torch.func.jacfwd(aux_fun, 0, randomness="same")
+    # Compute ABM part with Forward-diff
+    jacfwd = torch.func.jacfwd(aux_fun, 0, randomness="same", has_aux=True)
+    total_loss = 0
+    total_params_diff = 0
     for params in params_list:
-        # Compute ABM part with Forward-diff
-        total_loss += aux_fun(params.detach().clone())
-        jacobian = jacfwd(params.detach().clone()).to(torch.float)
+        jacobian, loss = jacfwd(params.detach()) # Important to detach here since we don't reverse diff this.
+        total_loss += loss
         # Use reverse diff for flow
-        params_diff_total += torch.dot(jacobian, params)
+        total_params_diff += torch.dot(jacobian.to(torch.float), params)
     # Back-propagate to flow parameters
-    params_diff_total.backward()
+    total_params_diff.backward()
     return total_loss
 
 
@@ -283,9 +286,12 @@ def infer_fd(
             flow_cond=flow_cond, prior=prior, n_samples=n_samples_regularization
         )
         loss = forecast_loss + reglrise_loss
+        losses["forecast"].append(forecast_loss.item())
+        losses["reglrise"].append(reglrise_loss.item())
+        losses["total"].append(loss.item())
         if torch.isnan(loss):
+            torch.save(flow.state_dict(), save_dir / f"to_debug.pth")
             raise ValueError("Loss is nan!")
-        #loss.backward()
         torch.nn.utils.clip_grad_norm_(flow.parameters(), max_norm=1.0)
         if loss.item() < best_loss:
             torch.save(flow.state_dict(), save_dir / f"best_model_{it:04d}.pth")

@@ -1,7 +1,10 @@
 import numpy as np
+import torch
+import random
 import re
 
 from .mpi_setup import mpi_rank
+
 
 def read_fortran_data_file(file):
     # count the columns in the first row of data

@@ -9,7 +9,7 @@ save_path: ./results/june
   #data_path: /Users/arnull/code/gradabm-june/worlds/data_camden.pkl
 #data_path: /home/coml0859/data_camden.pkl
 #data_path: /Users/arnull/code/gradabm-june/test/data/data.pkl
-data_path: /cosma7/data/dp004/dc-quer1/data_england.pkl
+data_path: /cosma7/data/dp004/dc-quer1/gradabm_june_graphs/camden_leisure_1.pkl
 
 timer:
   initial_day: '2020-03-01'
@@ -17,26 +17,26 @@ timer:
     weekday:
       0:
       - company
-      - school
-      - university
-      - pub
-      - grocery
-      - gym
-      - cinema
-      - visit
-      - care_visit
-      - care_home
-      - household
+        #- school
+        #- university
+        #- pub
+        #- grocery
+        #- gym
+        #- cinema
+        #- visit
+        #- care_visit
+        #- care_home
+        #- household
     weekend:
       0:
-      - pub
-      - grocery
-      - gym
-      - cinema
-      - visit
-      - care_visit
-      - care_home
-      - household
+        #- pub
+        #- grocery
+        #- gym
+        #- cinema
+        #- visit
+        #- care_visit
+        #- care_home
+        - company 
   step_duration:
     weekday:
       0: 24

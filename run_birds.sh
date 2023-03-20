@@ -1,5 +1,10 @@
-python scripts/fit_bird_june.py --n_days 60 -p all \
-    -d cuda:4 --n_epochs 5 --data_calibrate cases_per_timestep -w 0.01 \
-    --data_path ./data/june_synth.csv --june_config configs/bird_june.yaml \
-    --results_path ./test_results --n_samples_per_epoch 1
+parallel --link python scripts/fit_bird_june.py --n_days 30 -p company \
+    -d cuda:{2} --n_epochs 100 --data_calibrate cases_per_timestep -w 0.01 \
+    --data_path ./data/camden_synth.csv --june_config configs/bird_june.yaml \
+    --results_path ./test_results_{1} --n_samples_per_epoch 5 --diff_mode {1} \
+    ::: fwd rev ::: 5 6 
 
+#python scripts/fit_bird_june.py --n_days 30 -p company \
+#    -d cuda:5 --n_epochs 100 --data_calibrate cases_per_timestep -w 0.01 \
+#    --data_path ./data/camden_synth.csv --june_config configs/bird_june.yaml \
+#    --results_path ./test_results --n_samples_per_epoch 5 --diff_mode fwd \
