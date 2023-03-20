@@ -5,7 +5,7 @@ import datetime
 import pandas as pd
 import yaml
 
-from birds.infer import infer, infer_fd
+from birds.infer import infer
 from birds.models import BirdsJUNE
 from birds.utils import fix_seed
 
@@ -26,6 +26,7 @@ _all_parameters = [
     "care_visit",
     "care_home",
 ]
+
 
 def load_data(path, start_date, n_days, data_to_calibrate, device):
     df = pd.read_csv(path, index_col=0)
@@ -49,9 +50,9 @@ def setup_prior(n_parameters, device, parameter_names):
     means = []
     for name in parameter_names:
         if name == "seed":
-            means.append(-3.)
+            means.append(-3.0)
         else:
-            means.append(0.)
+            means.append(0.0)
     means = torch.tensor(means, device=device)
     return torch.distributions.MultivariateNormal(
         loc=means,
@@ -88,7 +89,7 @@ if __name__ == "__main__":
     parser.add_argument("--loss", default="LogMSELoss", type=str)
     parser.add_argument("--lr", default=1e-3, type=float)
     parser.add_argument("-w", "--weight", default=0.01, type=float)
-    parser.add_argument("--diff_mode", default="rev", type=str)
+    parser.add_argument("--diff_mode", default="reverse", type=str)
     args = parser.parse_args()
 
     if type(args.parameters) != list:
@@ -103,6 +104,7 @@ if __name__ == "__main__":
         data_to_calibrate = args.data_calibrate
     print(f"Calibrating {parameters_to_calibrate} parameters.")
     print(f"Calibrating to {data_to_calibrate} data.")
+    print(f"Saving results to {args.results_path}")
     n_parameters = len(parameters_to_calibrate)
 
     config = setup_june_config(
@@ -122,15 +124,12 @@ if __name__ == "__main__":
         data_to_calibrate,
         args.device,
     )
-    if args.diff_mode == "rev":
-        infer_func = infer
-    elif args.diff_mode == "fwd":
-        infer_func = infer_fd
-    infer_func(
+    infer(
         model=model,
         flow=flow,
         prior=prior,
         obs_data=obs_data,
+        diff_mode=args.diff_mode,
         n_epochs=args.n_epochs,
         n_samples_per_epoch=args.n_samples_per_epoch,
         n_samples_regularization=args.n_samples_regularization,
