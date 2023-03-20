@@ -220,7 +220,7 @@ def _get_forecast_score_fwd(model, params_list, obs_data, loss_fn, n_samples):
         # Use reverse diff for flow
         params_diff_total += torch.dot(jacobian, params)
     # Back-propagate to flow parameters
-    params_diff_total.backward(retain_graph=True)
+    params_diff_total.backward()
     return total_loss
 
 

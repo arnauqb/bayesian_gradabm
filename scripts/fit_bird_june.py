@@ -119,7 +119,7 @@ if __name__ == "__main__":
         data_to_calibrate,
         args.device,
     )
-    infer(
+    infer_fd(
         model=model,
         flow=flow,
         prior=prior,
