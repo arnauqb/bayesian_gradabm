@@ -89,6 +89,7 @@ if __name__ == "__main__":
     parser.add_argument("--lr", default=1e-3, type=float)
     parser.add_argument("-w", "--weight", default=0.01, type=float)
     parser.add_argument("--diff_mode", default="reverse", type=str)
+    parser.add_argument("--chunk_size", default=0, type=int)
     args = parser.parse_args()
 
     if type(args.parameters) != list:
@@ -101,6 +102,10 @@ if __name__ == "__main__":
         data_to_calibrate = args.data_calibrate.split(" ")
     else:
         data_to_calibrate = args.data_calibrate
+    if args.chunk_size == 0:
+        jacobian_chunk_size = None
+    else:
+        jacobian_chunk_size = args.chunk_size
     print(f"Calibrating {parameters_to_calibrate} parameters.")
     print(f"Calibrating to {data_to_calibrate} data.")
     print(f"Saving results to {args.results_path}")
@@ -123,13 +128,13 @@ if __name__ == "__main__":
         data_to_calibrate,
         args.device,
     )
-    #with torch.autograd.detect_anomaly(check_nan=True):
     infer(
         model=model,
         flow=flow,
         prior=prior,
         obs_data=obs_data,
         diff_mode=args.diff_mode,
+        jacobian_chunk_size=jacobian_chunk_size,
         n_epochs=args.n_epochs,
         n_samples_per_epoch=args.n_samples_per_epoch,
         n_samples_regularization=args.n_samples_regularization,

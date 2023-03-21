@@ -11,6 +11,7 @@ from collections import defaultdict
 import matplotlib.pyplot as plt
 
 from .plotting import plot_posterior
+from .torch_jacfwd import jacfwd
 
 
 def _setup_optimizer(model, flow, learning_rate, n_epochs):
@@ -68,7 +69,10 @@ def _compute_forecast_loss_reverse(model, flow_cond, obs_data, loss_fn, n_sample
         loss += loss_i
     return loss / n_samples
 
-def _compute_forecast_loss_forward(model, flow_cond, obs_data, loss_fn, n_samples):
+
+def _compute_forecast_loss_forward(
+    model, flow_cond, obs_data, loss_fn, n_samples, jacobian_chunk_size
+):
     def aux_fun(params):
         loss = 0.0
         outputs_list = model(params)
@@ -83,18 +87,22 @@ def _compute_forecast_loss_forward(model, flow_cond, obs_data, loss_fn, n_sample
             model_output = outputs_list[i]
             loss += loss_fn(observation, model_output)
         loss = loss / n_samples
-        return loss, loss # first is diffed, second is not.
+        return loss, loss  # first is diffed, second is not.
 
     # Sample from flow
     params_list = flow_cond.rsample((n_samples,))
     # Get Jacobian using Forward-diff
     total_jacobian = torch.zeros(params_list[0].shape)
     # Compute ABM part with Forward-diff
-    jacfwd = torch.func.jacfwd(aux_fun, 0, randomness="same", has_aux=True)
+    jac_f = jacfwd(
+        aux_fun, 0, randomness="same", has_aux=True, chunk_size=jacobian_chunk_size
+    )
     total_loss = 0
     total_params_diff = 0
     for params in params_list:
-        jacobian, loss = jacfwd(params.detach()) # Important to detach here since we don't reverse diff this.
+        jacobian, loss = jac_f(
+            params.detach()
+        )  # Important to detach here since we don't reverse diff this.
         total_loss += loss
         # Use reverse diff for flow
         total_params_diff += torch.dot(jacobian.to(torch.float), params)
@@ -125,7 +133,8 @@ def infer(
     flow: zuko.flows.FlowModule,
     prior: torch.distributions.Distribution,
     obs_data: list[torch.Tensor],
-    diff_mode = "reverse",
+    diff_mode="reverse",
+    jacobian_chunk_size: int = None,
     n_epochs: int = 100,
     n_samples_per_epoch: int = 10,
     n_samples_regularization: int = 1000,
@@ -161,6 +170,7 @@ def infer(
             ```
     obs_data: A list of `torch.Tensor` with the observed data series. The shapes should correspond exactly to the output of the `forward()` method of the simulator.
     diff_mode: which diff mode to use. Options are "reverse" or "forward". For high memory tasks use "forward", "reverse" is faster.
+    jacobian_chunk_size: chunk size for torch vmap to compute jacobian. Set to None for max perforamnce, or low number when out of memory.
     n_epochs: Number of epochs
     n_samples_per_epoch: Number of sets of parameters sampled from the flow for each epoch.
     n_samples_regularization: Number of samples used to calculate the regularization term between the flow and the prior.
@@ -190,12 +200,13 @@ def infer(
         flow_cond = flow(torch.zeros(1, device=device))
         optimizer.zero_grad()
         forecast_loss = forecast_loss_fn(
-                model=model,
-                flow_cond=flow_cond,
-                obs_data=obs_data,
-                loss_fn=loss_fn,
-                n_samples=n_samples_per_epoch,
-            )
+            model=model,
+            flow_cond=flow_cond,
+            obs_data=obs_data,
+            loss_fn=loss_fn,
+            n_samples=n_samples_per_epoch,
+            jacobian_chunk_size=jacobian_chunk_size,
+        )
         reglrise_loss = w * _get_regularisation(
             flow_cond=flow_cond, prior=prior, n_samples=n_samples_regularization
         )
@@ -208,7 +219,7 @@ def infer(
             raise ValueError("Loss is nan!")
         if diff_mode == "reverse":
             loss.backward()
-        #torch.nn.utils.clip_grad_norm_(flow.parameters(), max_norm=1.0)
+        # torch.nn.utils.clip_grad_norm_(flow.parameters(), max_norm=1.0)
         if loss.item() < best_loss:
             torch.save(flow.state_dict(), save_dir / f"best_model_{it:04d}.pth")
             best_loss = loss.item()
@@ -235,5 +246,3 @@ def infer(
             )
         optimizer.step()
         scheduler.step()
-
-
