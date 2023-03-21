@@ -50,7 +50,7 @@ def _setup_paths(save_dir):
     return save_dir, posteriors_dir
 
 
-def _compute_forecast_loss_reverse(model, flow_cond, obs_data, loss_fn, n_samples):
+def _compute_forecast_loss_reverse(model, flow_cond, obs_data, loss_fn, n_samples, jacobian_chunk_size):
     loss = 0.0
     for i in range(n_samples):
         params = flow_cond.rsample()

@@ -47,15 +47,19 @@ def setup_flow(n_parameters, device):
 
 def setup_prior(n_parameters, device, parameter_names):
     means = []
+    stds = []
     for name in parameter_names:
         if name == "seed":
             means.append(-3.0)
+            stds.append(0.25)
         else:
             means.append(0.0)
+            stds.append(1.0)
     means = torch.tensor(means, device=device)
+    stds = torch.tensor(stds, device=device)
     return torch.distributions.MultivariateNormal(
         loc=means,
-        covariance_matrix=torch.eye(n_parameters, device=device),
+        covariance_matrix= stds * torch.eye(n_parameters, device=device),
     )
 
 
