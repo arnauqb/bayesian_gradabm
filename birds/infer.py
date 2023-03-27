@@ -219,7 +219,7 @@ def infer(
             raise ValueError("Loss is nan!")
         if diff_mode == "reverse":
             loss.backward()
-        # torch.nn.utils.clip_grad_norm_(flow.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(flow.parameters(), max_norm=1.0)
         if loss.item() < best_loss:
             torch.save(flow.state_dict(), save_dir / f"best_model_{it:04d}.pth")
             best_loss = loss.item()
@@ -246,3 +246,41 @@ def infer(
             )
         optimizer.step()
         scheduler.step()
+
+def infer_point(
+    model: torch.nn.Module,
+    obs_data: list[torch.Tensor],
+    diff_mode="reverse",
+    jacobian_chunk_size: int = None,
+    n_epochs: int = 100,
+    save_dir: str = "./results",
+    learning_rate: float = 1e-3,
+    loss: str = "LogMSELoss",
+    device="cpu",
+    **kwargs,
+):
+    parameters = torch.nn.Parameter(torch.zeros(len(model.params_to_calibrate)))
+    optimizer = torch.optim.AdamW(parameters, lr=learning_rate)
+    loss_fn = _setup_loss(loss)
+    save_dir, posteriors_dir = _setup_paths(save_dir)
+    iterator = tqdm(range(n_epochs))
+    losses = defaultdict(list)
+    best_loss = np.inf
+    for it in iterator:
+        optimizer.zero_grad()
+        pred = model(parameters)
+        outputs_list = model(params)
+        for i in range(len(outputs_list)):
+            observation = obs_data[i]
+            model_output = outputs_list[i]
+            loss += loss_fn(observation, model_output)
+        loss = loss / n_samples
+        loss.backward()
+        losses["total"].append(loss.item())
+        #torch.nn.utils.clip_grad_norm_(flow.parameters(), max_norm=1.0)
+        if loss.item() < best_loss:
+            torch.save(parameters, save_dir / f"best_parameters_{it:04d}.pth")
+            best_loss = loss.item()
+        df = pd.DataFrame(losses)
+        df.to_csv(save_dir / "losses_data.csv", index=False)
+        optimizer.step()

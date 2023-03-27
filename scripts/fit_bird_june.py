@@ -40,7 +40,8 @@ def load_data(path, start_date, n_days, data_to_calibrate, device):
 
 
 def setup_flow(n_parameters, device):
-    flow = zuko.flows.NSF(n_parameters, 1, transforms=3, hidden_features=[64] * 3)
+    flow = zuko.flows.NSF(n_parameters, 1, transforms=5, hidden_features=[128] * 3)
+    #flow = zuko.flows.MAF(n_parameters, 1, transforms=3)
     flow = flow.to(device)
     return flow
 
@@ -54,7 +55,7 @@ def setup_prior(n_parameters, device, parameter_names):
             stds.append(0.25)
         else:
             means.append(0.0)
-            stds.append(1.0)
+            stds.append(0.5)
     means = torch.tensor(means, device=device)
     stds = torch.tensor(stds, device=device)
     return torch.distributions.MultivariateNormal(
@@ -151,3 +152,13 @@ if __name__ == "__main__":
         true_values=None,
         lims=None,
     )
+    #infer_point(
+    #    model=model,
+    #    obs_data=obs_data,
+    #    diff_mode="reverse",
+    #    jacobian_chunk_size: int = None,
+    #    n_epochs: int = 100,
+    #    save_dir: str = "./results",
+    #    learning_rate: float = 1e-3,
+    #    loss: str = "LogMSELoss",
+    #    device=device)

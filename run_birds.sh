@@ -1,11 +1,7 @@
-#parallel --link python scripts/fit_bird_june.py --n_days 30 -p household company \
-#    -d cuda:{2} --n_epochs 1000 --data_calibrate cases_per_timestep -w 0.01 \
-#    --data_path ./data/camden_synth.csv --june_config configs/bird_june.yaml \
-#    --results_path ./test_results_{1} --n_samples_per_epoch 5 --diff_mode {1} \
-#    ::: forward reverse ::: 5 6 
-
-python scripts/fit_bird_june.py --n_days 61 -p all \
-    -d cuda:5 --n_epochs 1000 --data_calibrate deaths_per_timestep -w 0.01 \
-    --data_path ./data/london_deaths.csv --june_config configs/bird_june.yaml \
-    --results_path ./london_results --n_samples_per_epoch 5 --diff_mode forward \
-    --chunk_size 0
+parallel -u --link python scripts/fit_bird_june.py --n_days 30 -p household company school university pub \
+    -d cuda:{1} --n_epochs 10000 \
+    --data_calibrate cases_by_age_18 cases_by_age_25 cases_by_age_65 cases_by_age_100 \
+    -w {2} --data_path ./data/camden_westminster_brent_synth.csv --june_config configs/bird_june.yaml \
+    --results_path ./3d_w_{2} --n_samples_per_epoch 5 --diff_mode reverse \
+    --chunk_size 0 \
+    ::: 4 5 6 7 8 ::: 100.0 10.0 1.0 0.1 0.01
