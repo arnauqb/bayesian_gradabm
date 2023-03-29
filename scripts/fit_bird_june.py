@@ -40,8 +40,8 @@ def load_data(path, start_date, n_days, data_to_calibrate, device):
 
 
 def setup_flow(n_parameters, device):
-    flow = zuko.flows.NSF(n_parameters, 1, transforms=5, hidden_features=[128] * 3)
-    #flow = zuko.flows.MAF(n_parameters, 1, transforms=3)
+    flow = zuko.flows.NSF(n_parameters, 1, transforms=3, hidden_features=[128] * 3)
+    #flow = zuko.flows.MAF(n_parameters, 1, transforms=5, hidden_features=[50] * 2)
     flow = flow.to(device)
     return flow
 
@@ -54,7 +54,7 @@ def setup_prior(n_parameters, device, parameter_names):
             means.append(-3.0)
             stds.append(0.25)
         else:
-            means.append(0.0)
+            means.append(0.5)
             stds.append(0.5)
     means = torch.tensor(means, device=device)
     stds = torch.tensor(stds, device=device)
@@ -95,6 +95,7 @@ if __name__ == "__main__":
     parser.add_argument("-w", "--weight", default=0.01, type=float)
     parser.add_argument("--diff_mode", default="reverse", type=str)
     parser.add_argument("--chunk_size", default=0, type=int)
+    parser.add_argument("--load_model", default=None, type=str)
     args = parser.parse_args()
 
     if type(args.parameters) != list:
@@ -114,6 +115,7 @@ if __name__ == "__main__":
     print(f"Calibrating {parameters_to_calibrate} parameters.")
     print(f"Calibrating to {data_to_calibrate} data.")
     print(f"Saving results to {args.results_path}")
+    print(f"Pre-loading model dict {args.load_model}")
     n_parameters = len(parameters_to_calibrate)
 
     config = setup_june_config(
@@ -147,18 +149,9 @@ if __name__ == "__main__":
         save_dir=args.results_path,
         learning_rate=args.lr,
         loss=args.loss,
+        preload_model_path = args.load_model,
         plot_posteriors="never",
         device=args.device,
         true_values=None,
         lims=None,
     )
-    #infer_point(
-    #    model=model,
-    #    obs_data=obs_data,
-    #    diff_mode="reverse",
-    #    jacobian_chunk_size: int = None,
-    #    n_epochs: int = 100,
-    #    save_dir: str = "./results",
-    #    learning_rate: float = 1e-3,
-    #    loss: str = "LogMSELoss",
-    #    device=device)

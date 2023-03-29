@@ -10,19 +10,20 @@ age_bins_to_save: [0, 18, 25, 65, 100]
   #data_path: /Users/arnull/code/gradabm-june/worlds/data_camden.pkl
 #data_path: /home/coml0859/data_camden.pkl
 #data_path: /Users/arnull/code/gradabm-june/test/data/data.pkl
+data_path: /cosma/home/dp004/dc-quer1/gradabm-june/test/data/data.pkl
 #data_path: /cosma7/data/dp004/dc-quer1/gradabm_june_graphs/camden_leisure_1.pkl
 #data_path: /cosma7/data/dp004/dc-quer1/gradabm_june_graphs/london_leisure_1.pkl
-data_path: /cosma7/data/dp004/dc-quer1/gradabm_june_graphs/camden_westminster_brent.pkl
+#data_path: /cosma7/data/dp004/dc-quer1/gradabm_june_graphs/camden_westminster_brent.pkl
 
 timer:
   initial_day: '2020-03-01'
   step_activities:
     weekday:
       0:
-      - company
-      - school
-      - university
-      - pub
+        #- company
+        #- school
+        #- university
+        #- pub
         #- grocery
         #- gym
         #- cinema
@@ -32,7 +33,7 @@ timer:
       - household
     weekend:
       0:
-      - pub
+        #- pub
         # - grocery
         # - gym
         # - cinema
@@ -72,7 +73,7 @@ networks:
     log_beta: 0.5
 
 infection_seed:
-  log_fraction_initial_cases: -3.0
+  log_fraction_initial_cases: -3.5
 
     #policies:
     #  interaction:

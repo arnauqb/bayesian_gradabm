@@ -30,5 +30,12 @@ class BirdsJUNE(torch.nn.Module):
         res, _ = self.runner()
         ret = []
         for key in self.data_to_calibrate:
-            ret.append(res[key])
+            if "age" in key:
+                age_bin = int(key.split("_")[-1])
+                toappend = res[key] 
+            elif key == "cases_per_timestep" or key == "deaths_per_timestep":
+                toappend = res[key]
+            else:
+                raise ValueError(f"Data to calibrate {key} not supported.")
+            ret.append(toappend)
         return ret

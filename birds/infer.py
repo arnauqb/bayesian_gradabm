@@ -2,6 +2,8 @@ import zuko
 import torch
 import shutil
 import logging
+import sklearn
+import sigkernel
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -19,7 +21,7 @@ def _setup_optimizer(model, flow, learning_rate, n_epochs):
     optimizer = torch.optim.AdamW(parameters_to_optimize, lr=learning_rate)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs)
     n_parameters = sum([len(a) for a in parameters_to_optimize])
-    logging.info(f"Training flow with {n_parameters} parameters")
+    print(f"Training flow with {n_parameters} parameters")
     return optimizer, scheduler
 
 
@@ -46,11 +48,15 @@ def _setup_paths(save_dir):
     except:
         pass
     posteriors_dir = save_dir / "posteriors"
+    models_dir = save_dir / "saved_models"
     posteriors_dir.mkdir(exist_ok=True, parents=True)
-    return save_dir, posteriors_dir
+    models_dir.mkdir(exist_ok=True, parents=True)
+    return save_dir, posteriors_dir, models_dir
 
 
-def _compute_forecast_loss_reverse(model, flow_cond, obs_data, loss_fn, n_samples, jacobian_chunk_size):
+def _compute_forecast_loss_reverse(
+    model, flow_cond, obs_data, loss_fn, n_samples, jacobian_chunk_size
+):
     loss = 0.0
     for i in range(n_samples):
         params = flow_cond.rsample()
@@ -110,6 +116,30 @@ def _compute_forecast_loss_forward(
     total_params_diff.backward()
     return total_loss
 
+def _compute_signature_kernel_sigma(time_series):
+    pairwise_distances = sklearn.metrics.pairwise_distances(time_series.reshape(-1,1).cpu().numpy())
+    sigma = np.median(pairwise_distances)
+    return sigma
+
+def _compute_forecast_loss_signature_kernel_reverse(
+    model, flow_cond, obs_data, loss_fn, n_samples, jacobian_chunk_size
+):
+    time_index = torch.linspace(0, 1, obs_data[0].shape[0], device = obs_data[0].device)
+    y = torch.vstack((time_index, obs_data[0])).transpose(0,1)[None,:].to(torch.double)
+    Xs = []
+    time_index_batched = time_index.repeat(n_samples).reshape(n_samples, -1)
+    for i in range(n_samples):
+        params = flow_cond.rsample()
+        print(params)
+        outputs = torch.hstack(model(params))
+        Xs.append(outputs)
+    X = torch.vstack(Xs)
+    X = torch.cat((time_index_batched[:,None], X[:,None]), 1).transpose(1,2).to(torch.double)
+    assert X.shape == (n_samples, obs_data[0].shape[0], 2)
+    assert y.shape == (1, obs_data[0].shape[0], 2)
+    loss = loss_fn.compute_scoring_rule(X, y)
+    print(loss)
+    return loss
 
 def _get_regularisation(flow_cond, prior, n_samples=5):
     """
@@ -124,7 +154,7 @@ def _get_regularisation(flow_cond, prior, n_samples=5):
 
 def _plot_posterior(flow_cond, true_values, posteriors_dir, it, **kwargs):
     f = plot_posterior(flow_cond=flow_cond, true_values=true_values, **kwargs)
-    f.savefig(posteriors_dir / f"posterior_{it:03d}.png", dpi=150, bbox_inches="tight")
+    f.savefig(posteriors_dir / f"posterior_{it:03d}.png", dpi=50, bbox_inches="tight")
     plt.close(f)
 
 
@@ -145,6 +175,7 @@ def infer(
     true_values: Optional[list] = None,
     plot_posteriors: str = "every",
     device="cpu",
+    preload_model_path: str = None,
     **kwargs,
 ):
     r"""
@@ -181,20 +212,28 @@ def infer(
     plot_posteriors: When to save the posteriors. Options: "best" : only save when loss is improved, "every" save all, "never" : never save.
     **kwargs: Keyword arguments to be passed to model.
     """
+    if preload_model_path:
+        flow.load_state_dict(torch.load(preload_model_path, map_location=device))
     optimizer, scheduler = _setup_optimizer(model, flow, learning_rate, n_epochs)
-    loss_fn = _setup_loss(loss)
-    save_dir, posteriors_dir = _setup_paths(save_dir)
+    save_dir, posteriors_dir, models_dir = _setup_paths(save_dir)
     w = torch.tensor(w, requires_grad=True)
     iterator = tqdm(range(n_epochs))
     losses = defaultdict(list)
     best_loss = np.inf
     best_forecast_loss = np.inf
-    if diff_mode == "reverse":
-        forecast_loss_fn = _compute_forecast_loss_reverse
-    elif diff_mode == "forward":
-        forecast_loss_fn = _compute_forecast_loss_forward
+    if loss == "signature_kernel":
+        sigma = _compute_signature_kernel_sigma(obs_data[0]) #TODO: expand to any dim.
+        static_kernel = sigkernel.RBFKernel(sigma=sigma)
+        loss_fn = sigkernel.SigKernel(static_kernel, dyadic_order=1)
+        forecast_loss_fn = _compute_forecast_loss_signature_kernel_reverse
     else:
-        raise ValuError(f"Diff mode {diff_mode} not supported.")
+        loss_fn = _setup_loss(loss)
+        if diff_mode == "reverse":
+            forecast_loss_fn = _compute_forecast_loss_reverse
+        elif diff_mode == "forward":
+            forecast_loss_fn = _compute_forecast_loss_forward
+        else:
+            raise ValuError(f"Diff mode {diff_mode} not supported.")
     for it in iterator:
         need_to_plot_posterior = plot_posteriors == "every"
         flow_cond = flow(torch.zeros(1, device=device))
@@ -215,20 +254,21 @@ def infer(
         losses["reglrise"].append(reglrise_loss.item())
         losses["total"].append(loss.item())
         if torch.isnan(loss):
-            torch.save(flow.state_dict(), save_dir / f"to_debug.pth")
+            torch.save(flow.state_dict(), models_dir / f"to_debug.pth")
             raise ValueError("Loss is nan!")
         if diff_mode == "reverse":
             loss.backward()
-        torch.nn.utils.clip_grad_norm_(flow.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(flow.parameters(), 1.0)
+        # torch.save(flow.state_dict(), models_dir / f"model_{it:04d}.pth")
         if loss.item() < best_loss:
-            torch.save(flow.state_dict(), save_dir / f"best_model_{it:04d}.pth")
+            torch.save(flow.state_dict(), models_dir / f"best_model_{it:04d}.pth")
             best_loss = loss.item()
             need_to_plot_posterior = need_to_plot_posterior or (
                 plot_posteriors == "best"
             )
         if forecast_loss.item() < best_forecast_loss:
             torch.save(
-                flow.state_dict(), save_dir / f"best_model_forecast_{it:04d}.pth"
+                flow.state_dict(), models_dir / f"best_model_forecast_{it:04d}.pth"
             )
             best_forecast_loss = forecast_loss.item()
             need_to_plot_posterior = need_to_plot_posterior or (
@@ -246,41 +286,3 @@ def infer(
             )
         optimizer.step()
         scheduler.step()
-
-def infer_point(
-    model: torch.nn.Module,
-    obs_data: list[torch.Tensor],
-    diff_mode="reverse",
-    jacobian_chunk_size: int = None,
-    n_epochs: int = 100,
-    save_dir: str = "./results",
-    learning_rate: float = 1e-3,
-    loss: str = "LogMSELoss",
-    device="cpu",
-    **kwargs,
-):
-    parameters = torch.nn.Parameter(torch.zeros(len(model.params_to_calibrate)))
-    optimizer = torch.optim.AdamW(parameters, lr=learning_rate)
-    loss_fn = _setup_loss(loss)
-    save_dir, posteriors_dir = _setup_paths(save_dir)
-    iterator = tqdm(range(n_epochs))
-    losses = defaultdict(list)
-    best_loss = np.inf
-    for it in iterator:
-        optimizer.zero_grad()
-        pred = model(parameters)
-        outputs_list = model(params)
-        for i in range(len(outputs_list)):
-            observation = obs_data[i]
-            model_output = outputs_list[i]
-            loss += loss_fn(observation, model_output)
-        loss = loss / n_samples
-        loss.backward()
-        losses["total"].append(loss.item())
-        #torch.nn.utils.clip_grad_norm_(flow.parameters(), max_norm=1.0)
-        if loss.item() < best_loss:
-            torch.save(parameters, save_dir / f"best_parameters_{it:04d}.pth")
-            best_loss = loss.item()
-        df = pd.DataFrame(losses)
-        df.to_csv(save_dir / "losses_data.csv", index=False)
-        optimizer.step()
