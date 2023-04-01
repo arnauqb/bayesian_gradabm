@@ -3,7 +3,7 @@ import torch
 import shutil
 import logging
 import sklearn
-#import sigkernel
+import sigkernel
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -19,7 +19,7 @@ from .torch_jacfwd import jacfwd
 def _setup_optimizer(model, flow, learning_rate, n_epochs):
     parameters_to_optimize = list(flow.parameters())
     optimizer = torch.optim.AdamW(parameters_to_optimize, lr=learning_rate)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs)
+    scheduler = None #torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=300)
     n_parameters = sum([len(a) for a in parameters_to_optimize])
     print(f"Training flow with {n_parameters} parameters")
     return optimizer, scheduler
@@ -27,14 +27,14 @@ def _setup_optimizer(model, flow, learning_rate, n_epochs):
 
 def _setup_loss(loss_name):
     if loss_name == "LogMSELoss":
-        loss_fn = torch.nn.MSELoss(reduction="sum")
+        loss_fn = torch.nn.MSELoss(reduction="mean")
 
         def loss(x, y):
             mask = (x > 0) & (y > 0)  # remove points where log is not defined.
             return loss_fn(torch.log10(x[mask]), torch.log10(y[mask]))
 
     elif loss_name == "MSELoss":
-        loss_fn = torch.nn.MSELoss(reduction="sum")
+        loss_fn = torch.nn.MSELoss(reduction="mean")
         loss = lambda x, y: loss_fn(x, y)
     else:
         raise ValueError("Loss not supported")
@@ -125,19 +125,22 @@ def _compute_forecast_loss_signature_kernel_reverse(
     model, flow_cond, obs_data, loss_fn, n_samples, jacobian_chunk_size
 ):
     time_index = torch.linspace(0, 1, obs_data[0].shape[0], device = obs_data[0].device)
-    y = torch.vstack((time_index, obs_data[0])).transpose(0,1)[None,:].to(torch.double)
+    y = torch.vstack((time_index, torch.log10(obs_data[0]))).transpose(0,1)[None,:].to(torch.double)
     Xs = []
     time_index_batched = time_index.repeat(n_samples).reshape(n_samples, -1)
     for i in range(n_samples):
         params = flow_cond.rsample()
-        print(params)
         outputs = torch.hstack(model(params))
         Xs.append(outputs)
-    X = torch.vstack(Xs)
+    X = torch.log10(torch.vstack(Xs))
     X = torch.cat((time_index_batched[:,None], X[:,None]), 1).transpose(1,2).to(torch.double)
-    assert X.shape == (n_samples, obs_data[0].shape[0], 2)
-    assert y.shape == (1, obs_data[0].shape[0], 2)
-    loss = loss_fn.compute_scoring_rule(X, y)
+    #Y = y.repeat((X.shape[0],1,1))
+    #assert X.shape == (n_samples, obs_data[0].shape[0], 2)
+    #assert Y.shape == X.shape
+    #score_xy = loss_fn.compute_kernel(X, Y)
+    #score_yy = loss_fn.compute_kernel(Y, Y)
+    #loss = torch.nn.MSELoss(reduction="mean")(score_xy, score_yy)
+    loss = loss_fn.compute_scoring_rule(X, y) + loss_fn.compute_kernel(y,y,1)
     print(loss)
     return loss
 
@@ -259,7 +262,7 @@ def infer(
         if diff_mode == "reverse":
             loss.backward()
         torch.nn.utils.clip_grad_norm_(flow.parameters(), 1.0)
-        # torch.save(flow.state_dict(), models_dir / f"model_{it:04d}.pth")
+        torch.save(flow.state_dict(), models_dir / f"model_{it:04d}.pth")
         if loss.item() < best_loss:
             torch.save(flow.state_dict(), models_dir / f"best_model_{it:04d}.pth")
             best_loss = loss.item()
@@ -285,4 +288,4 @@ def infer(
                 **kwargs,
             )
         optimizer.step()
-        scheduler.step()
+        #scheduler.step()

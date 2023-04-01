@@ -41,7 +41,7 @@ def load_data(path, start_date, n_days, data_to_calibrate, device):
 
 def setup_flow(n_parameters, device):
     flow = zuko.flows.NSF(n_parameters, 1, transforms=3, hidden_features=[128] * 3)
-    #flow = zuko.flows.MAF(n_parameters, 1, transforms=5, hidden_features=[50] * 2)
+    #flow = zuko.flows.MAF(n_parameters, 1, transforms=10, hidden_features=[50] * 2)
     flow = flow.to(device)
     return flow
 
