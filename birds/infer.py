@@ -60,7 +60,6 @@ def _setup_paths(save_dir):
     models_dir.mkdir(exist_ok=True, parents=True)
     return save_dir, posteriors_dir, models_dir
 
-
 def _compute_forecast_loss_reverse(
     model, flow_cond, obs_data, loss_fn, n_samples, jacobian_chunk_size
 ):
@@ -108,36 +107,38 @@ def _compute_forecast_loss_forward(
     else:
         params_list_comm = None
     # scatter params to ranks
-    print("---------------")
-    print(params_list_comm)
     params_list_comm = mpi_comm.bcast(params_list_comm, root=0)
-    print(params_list_comm)
     # Compute ABM jacobian with Forward-diff
     jac_f = jacfwd(
         aux_fun, 0, randomness="same", has_aux=True, chunk_size=jacobian_chunk_size
     )
     total_loss = 0
     total_params_diff = 0
-    jacobians = []
+    jacobians_per_rank = []
+    parameters_indices_per_rank = []
     for i, params_comm in enumerate(params_list_comm):
         if i % mpi_size == mpi_rank:
+            parameters_indices_per_rank.append(i)
             jacobian, loss = jac_f(
                 torch.tensor(params_comm, device=model.device)
             )  # Important to detach here since we don't reverse diff this.
             total_loss += loss
-            jacobians.append(jacobian.cpu().numpy())
-    jacobians = np.array(jacobians)
-    jacobians_comm = mpi_comm.gather(jacobians, root=0)
+            jacobians_per_rank.append(jacobian.cpu().numpy())
+    jacobians_per_rank = np.array(jacobians_per_rank)
+    jacobians_comm = mpi_comm.gather(jacobians_per_rank, root=0)
+    parameters_indices_per_rank = mpi_comm.gather(parameters_indices_per_rank, root=0)
     total_loss = mpi_comm.gather(total_loss.item(), root = 0)
     if mpi_rank == 0:
+        parameters_indices = torch.tensor([i for i_rank in parameters_indices_per_rank for i in i_rank])
+        parameters_ordered = params_list[parameters_indices]
         jacobians_unrolled = [jacobian for jacobian_comm in jacobians_comm for jacobian in jacobian_comm]
         jacobians_unrolled = torch.tensor(np.stack(jacobians_unrolled), device=model.device, dtype=torch.float)
         total_params_diff = 0.0
-        for i in range(len(params_list)):
+        for i in range(n_samples):
             jacobian = jacobians_unrolled[i,:]
-            params = params_list[i]
+            parameters = parameters_ordered[i,:]
             # Use reverse diff for flow
-            total_params_diff += torch.dot(jacobian, params)
+            total_params_diff += torch.dot(jacobian, parameters)
         # Back-propagate to flow parameters
         total_params_diff.backward()
         return torch.tensor(sum(total_loss))
