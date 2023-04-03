@@ -8,6 +8,7 @@ class BirdsJUNE(torch.nn.Module):
         self.runner = runner
         self.params_to_calibrate = params_to_calibrate
         self.data_to_calibrate = data_to_calibrate
+        self.device = runner.device
 
     @classmethod
     def from_config(cls, config, parameters_to_calibrate, data_to_calibrate):

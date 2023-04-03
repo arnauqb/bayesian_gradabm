@@ -5,6 +5,11 @@ import datetime
 import pandas as pd
 import yaml
 
+from mpi4py import MPI
+mpi_comm = MPI.COMM_WORLD
+mpi_rank = mpi_comm.Get_rank()
+mpi_size = mpi_comm.Get_size()
+
 from birds.infer import infer
 from birds.models import BirdsJUNE
 from birds.utils import fix_seed
@@ -52,7 +57,8 @@ def setup_prior(n_parameters, device, parameter_names):
     for name in parameter_names:
         if name == "seed":
             means.append(-3.0)
-            stds.append(0.25)
+            #stds.append(1.0)
+            stds.append(0.5)
         else:
             means.append(0.5)
             stds.append(0.5)
@@ -83,7 +89,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data_calibrate", nargs="+", default="cases_per_timestep", type=str
     )
-    parser.add_argument("-d", "--device", default="cpu", type=str)
+    parser.add_argument("-d", "--device", default="cpu", type=str, nargs = "+")
     parser.add_argument("--data_path", default="./data/june_synth.csv", type=str)
     parser.add_argument("--results_path", default="./results_june_birds", type=str)
     parser.add_argument("--june_config", default="./configs/bird_june.yaml", type=str)
@@ -112,28 +118,31 @@ if __name__ == "__main__":
         jacobian_chunk_size = None
     else:
         jacobian_chunk_size = args.chunk_size
-    print(f"Calibrating {parameters_to_calibrate} parameters.")
-    print(f"Calibrating to {data_to_calibrate} data.")
-    print(f"Saving results to {args.results_path}")
-    print(f"Pre-loading model dict {args.load_model}")
+    device = args.device[mpi_rank]
+    print(f"Rank {mpi_rank} using device {device}")
+    if mpi_rank == 0:
+        print(f"Calibrating {parameters_to_calibrate} parameters.")
+        print(f"Calibrating to {data_to_calibrate} data.")
+        print(f"Saving results to {args.results_path}")
+        print(f"Pre-loading model dict {args.load_model}")
     n_parameters = len(parameters_to_calibrate)
 
     config = setup_june_config(
-        args.june_config, args.start_date, args.n_days, args.device
+        args.june_config, args.start_date, args.n_days, device
     )
     model = BirdsJUNE.from_config(
         config,
         parameters_to_calibrate=parameters_to_calibrate,
         data_to_calibrate=data_to_calibrate,
     )
-    prior = setup_prior(n_parameters, args.device, parameters_to_calibrate)
-    flow = setup_flow(n_parameters, args.device)
+    prior = setup_prior(n_parameters, device, parameters_to_calibrate)
+    flow = setup_flow(n_parameters, device)
     obs_data = load_data(
         args.data_path,
         args.start_date,
         args.n_days,
         data_to_calibrate,
-        args.device,
+        device,
     )
     infer(
         model=model,
@@ -151,7 +160,7 @@ if __name__ == "__main__":
         loss=args.loss,
         preload_model_path = args.load_model,
         plot_posteriors="never",
-        device=args.device,
+        device=device,
         true_values=None,
         lims=None,
     )

@@ -1,3 +1,4 @@
+import sys
 import zuko
 import torch
 import shutil
@@ -6,11 +7,17 @@ import sklearn
 import sigkernel
 import numpy as np
 import pandas as pd
+from time import time, sleep
 from tqdm import tqdm
+from mpi4py import MPI
 from pathlib import Path
 from typing import Optional
 from collections import defaultdict
 import matplotlib.pyplot as plt
+
+mpi_comm = MPI.COMM_WORLD
+mpi_rank = mpi_comm.Get_rank()
+mpi_size = mpi_comm.Get_size()
 
 from .plotting import plot_posterior
 from .torch_jacfwd import jacfwd
@@ -75,7 +82,6 @@ def _compute_forecast_loss_reverse(
         loss += loss_i
     return loss / n_samples
 
-
 def _compute_forecast_loss_forward(
     model, flow_cond, obs_data, loss_fn, n_samples, jacobian_chunk_size
 ):
@@ -96,25 +102,45 @@ def _compute_forecast_loss_forward(
         return loss, loss  # first is diffed, second is not.
 
     # Sample from flow
-    params_list = flow_cond.rsample((n_samples,))
-    # Get Jacobian using Forward-diff
-    total_jacobian = torch.zeros(params_list[0].shape)
-    # Compute ABM part with Forward-diff
+    if mpi_rank == 0:
+        params_list = flow_cond.rsample((n_samples,))
+        params_list_comm = params_list.detach().cpu().numpy()
+    else:
+        params_list_comm = None
+    # scatter params to ranks
+    print("---------------")
+    print(params_list_comm)
+    params_list_comm = mpi_comm.bcast(params_list_comm, root=0)
+    print(params_list_comm)
+    # Compute ABM jacobian with Forward-diff
     jac_f = jacfwd(
         aux_fun, 0, randomness="same", has_aux=True, chunk_size=jacobian_chunk_size
     )
     total_loss = 0
     total_params_diff = 0
-    for params in params_list:
-        jacobian, loss = jac_f(
-            params.detach()
-        )  # Important to detach here since we don't reverse diff this.
-        total_loss += loss
-        # Use reverse diff for flow
-        total_params_diff += torch.dot(jacobian.to(torch.float), params)
-    # Back-propagate to flow parameters
-    total_params_diff.backward()
-    return total_loss
+    jacobians = []
+    for i, params_comm in enumerate(params_list_comm):
+        if i % mpi_size == mpi_rank:
+            jacobian, loss = jac_f(
+                torch.tensor(params_comm, device=model.device)
+            )  # Important to detach here since we don't reverse diff this.
+            total_loss += loss
+            jacobians.append(jacobian.cpu().numpy())
+    jacobians = np.array(jacobians)
+    jacobians_comm = mpi_comm.gather(jacobians, root=0)
+    total_loss = mpi_comm.gather(total_loss.item(), root = 0)
+    if mpi_rank == 0:
+        jacobians_unrolled = [jacobian for jacobian_comm in jacobians_comm for jacobian in jacobian_comm]
+        jacobians_unrolled = torch.tensor(np.stack(jacobians_unrolled), device=model.device, dtype=torch.float)
+        total_params_diff = 0.0
+        for i in range(len(params_list)):
+            jacobian = jacobians_unrolled[i,:]
+            params = params_list[i]
+            # Use reverse diff for flow
+            total_params_diff += torch.dot(jacobian, params)
+        # Back-propagate to flow parameters
+        total_params_diff.backward()
+        return torch.tensor(sum(total_loss))
 
 def _compute_signature_kernel_sigma(time_series):
     pairwise_distances = sklearn.metrics.pairwise_distances(time_series.reshape(-1,1).cpu().numpy())
@@ -220,7 +246,6 @@ def infer(
     optimizer, scheduler = _setup_optimizer(model, flow, learning_rate, n_epochs)
     save_dir, posteriors_dir, models_dir = _setup_paths(save_dir)
     w = torch.tensor(w, requires_grad=True)
-    iterator = tqdm(range(n_epochs))
     losses = defaultdict(list)
     best_loss = np.inf
     best_forecast_loss = np.inf
@@ -237,10 +262,17 @@ def infer(
             forecast_loss_fn = _compute_forecast_loss_forward
         else:
             raise ValuError(f"Diff mode {diff_mode} not supported.")
+    if mpi_rank == 0:
+        iterator = tqdm(range(n_epochs))
+    else:
+        iterator = range(n_epochs)
     for it in iterator:
-        need_to_plot_posterior = plot_posteriors == "every"
-        flow_cond = flow(torch.zeros(1, device=device))
-        optimizer.zero_grad()
+        if mpi_rank == 0:
+            need_to_plot_posterior = plot_posteriors == "every"
+            flow_cond = flow(torch.zeros(1, device=device))
+            optimizer.zero_grad()
+        else:
+            flow_cond = None
         forecast_loss = forecast_loss_fn(
             model=model,
             flow_cond=flow_cond,
@@ -249,43 +281,44 @@ def infer(
             n_samples=n_samples_per_epoch,
             jacobian_chunk_size=jacobian_chunk_size,
         )
-        reglrise_loss = w * _get_regularisation(
-            flow_cond=flow_cond, prior=prior, n_samples=n_samples_regularization
-        )
-        loss = forecast_loss + reglrise_loss
-        losses["forecast"].append(forecast_loss.item())
-        losses["reglrise"].append(reglrise_loss.item())
-        losses["total"].append(loss.item())
-        if torch.isnan(loss):
-            torch.save(flow.state_dict(), models_dir / f"to_debug.pth")
-            raise ValueError("Loss is nan!")
-        if diff_mode == "reverse":
-            loss.backward()
-        torch.nn.utils.clip_grad_norm_(flow.parameters(), 1.0)
-        torch.save(flow.state_dict(), models_dir / f"model_{it:04d}.pth")
-        if loss.item() < best_loss:
-            torch.save(flow.state_dict(), models_dir / f"best_model_{it:04d}.pth")
-            best_loss = loss.item()
-            need_to_plot_posterior = need_to_plot_posterior or (
-                plot_posteriors == "best"
+        if mpi_rank == 0:
+            reglrise_loss = w * _get_regularisation(
+                flow_cond=flow_cond, prior=prior, n_samples=n_samples_regularization
             )
-        if forecast_loss.item() < best_forecast_loss:
-            torch.save(
-                flow.state_dict(), models_dir / f"best_model_forecast_{it:04d}.pth"
-            )
-            best_forecast_loss = forecast_loss.item()
-            need_to_plot_posterior = need_to_plot_posterior or (
-                plot_posteriors == "best"
-            )
-        df = pd.DataFrame(losses)
-        df.to_csv(save_dir / "losses_data.csv", index=False)
-        if need_to_plot_posterior:
-            _plot_posterior(
-                flow_cond=flow_cond,
-                true_values=true_values,
-                posteriors_dir=posteriors_dir,
-                it=it,
-                **kwargs,
-            )
-        optimizer.step()
-        #scheduler.step()
+            loss = forecast_loss + reglrise_loss
+            losses["forecast"].append(forecast_loss.item())
+            losses["reglrise"].append(reglrise_loss.item())
+            losses["total"].append(loss.item())
+            if torch.isnan(loss):
+                torch.save(flow.state_dict(), models_dir / f"to_debug.pth")
+                raise ValueError("Loss is nan!")
+            if diff_mode == "reverse":
+                loss.backward()
+            torch.nn.utils.clip_grad_norm_(flow.parameters(), 1.0)
+            torch.save(flow.state_dict(), models_dir / f"model_{it:04d}.pth")
+            if loss.item() < best_loss:
+                torch.save(flow.state_dict(), models_dir / f"best_model_{it:04d}.pth")
+                best_loss = loss.item()
+                need_to_plot_posterior = need_to_plot_posterior or (
+                    plot_posteriors == "best"
+                )
+            if forecast_loss.item() < best_forecast_loss:
+                torch.save(
+                    flow.state_dict(), models_dir / f"best_model_forecast_{it:04d}.pth"
+                )
+                best_forecast_loss = forecast_loss.item()
+                need_to_plot_posterior = need_to_plot_posterior or (
+                    plot_posteriors == "best"
+                )
+            df = pd.DataFrame(losses)
+            df.to_csv(save_dir / "losses_data.csv", index=False)
+            if need_to_plot_posterior:
+                _plot_posterior(
+                    flow_cond=flow_cond,
+                    true_values=true_values,
+                    posteriors_dir=posteriors_dir,
+                    it=it,
+                    **kwargs,
+                )
+            optimizer.step()
+            #scheduler.step()
