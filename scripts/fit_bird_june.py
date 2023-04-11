@@ -16,8 +16,7 @@ from birds.utils import fix_seed
 
 from grad_june import Runner
 
-_all_parameters = [
-    "seed",
+_all_no_seed_parameters = [
     "household",
     "company",
     "school",
@@ -31,6 +30,7 @@ _all_parameters = [
     "care_home",
 ]
 
+_all_parameters = ["seed"] + _all_no_seed_parameters
 
 def load_data(path, start_date, n_days, data_to_calibrate, device):
     df = pd.read_csv(path, index_col=0)
@@ -60,8 +60,8 @@ def setup_prior(n_parameters, device, parameter_names):
             #stds.append(1.0)
             stds.append(0.5)
         else:
-            means.append(0.5)
-            stds.append(0.5)
+            means.append(0.0)
+            stds.append(1.0)
     means = torch.tensor(means, device=device)
     stds = torch.tensor(stds, device=device)
     return torch.distributions.MultivariateNormal(
@@ -79,7 +79,7 @@ def setup_june_config(config_path, start_date, n_days, device):
 
 
 if __name__ == "__main__":
-    fix_seed(0)
+    #fix_seed(0)
     parser = argparse.ArgumentParser(prog="Fit June with flows")
     parser.add_argument("--start_date", default="2020-03-01", type=str)
     parser.add_argument("--n_days", default=30, type=int)
@@ -110,6 +110,8 @@ if __name__ == "__main__":
         parameters_to_calibrate = args.parameters
     if parameters_to_calibrate == ["all"]:
         parameters_to_calibrate = _all_parameters
+    elif parameters_to_calibrate == ["all_no_seed"]:
+        parameters_to_calibrate = _all_no_seed_parameters
     if type(args.data_calibrate) != list:
         data_to_calibrate = args.data_calibrate.split(" ")
     else:

@@ -21,12 +21,15 @@ mpi_size = mpi_comm.Get_size()
 
 from .plotting import plot_posterior
 from .torch_jacfwd import jacfwd
+from .sgld import SGLD
 
 
 def _setup_optimizer(model, flow, learning_rate, n_epochs):
     parameters_to_optimize = list(flow.parameters())
+    #optimizer = SGLD(parameters_to_optimize, lr=learning_rate)
     optimizer = torch.optim.AdamW(parameters_to_optimize, lr=learning_rate)
-    scheduler = None #torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=300)
+    #optimizer = torch.optim.SGD(parameters_to_optimize, lr=learning_rate, momentum=0.9)
+    scheduler = None # torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100)
     n_parameters = sum([len(a) for a in parameters_to_optimize])
     print(f"Training flow with {n_parameters} parameters")
     return optimizer, scheduler
@@ -38,7 +41,8 @@ def _setup_loss(loss_name):
 
         def loss(x, y):
             mask = (x > 0) & (y > 0)  # remove points where log is not defined.
-            return loss_fn(torch.log10(x[mask]), torch.log10(y[mask]))
+            loss = loss_fn(torch.log10(x[mask]), torch.log10(y[mask]))
+            return loss
 
     elif loss_name == "MSELoss":
         loss_fn = torch.nn.MSELoss(reduction="mean")
@@ -127,21 +131,26 @@ def _compute_forecast_loss_forward(
     jacobians_per_rank = np.array(jacobians_per_rank)
     jacobians_comm = mpi_comm.gather(jacobians_per_rank, root=0)
     parameters_indices_per_rank = mpi_comm.gather(parameters_indices_per_rank, root=0)
-    total_loss = mpi_comm.gather(total_loss.item(), root = 0)
+    total_loss = np.array(mpi_comm.gather(total_loss.item(), root = 0))
     if mpi_rank == 0:
         parameters_indices = torch.tensor([i for i_rank in parameters_indices_per_rank for i in i_rank])
         parameters_ordered = params_list[parameters_indices]
         jacobians_unrolled = [jacobian for jacobian_comm in jacobians_comm for jacobian in jacobian_comm]
         jacobians_unrolled = torch.tensor(np.stack(jacobians_unrolled), device=model.device, dtype=torch.float)
         total_params_diff = 0.0
+        n_samples_non_nan = 0
         for i in range(n_samples):
             jacobian = jacobians_unrolled[i,:]
             parameters = parameters_ordered[i,:]
+            if torch.isnan(jacobian).any():
+                continue
             # Use reverse diff for flow
             total_params_diff += torch.dot(jacobian, parameters)
+            n_samples_non_nan += 1
         # Back-propagate to flow parameters
+        total_params_diff = total_params_diff / n_samples_non_nan
         total_params_diff.backward()
-        return torch.tensor(sum(total_loss))
+        return torch.tensor(sum(total_loss[~np.isnan(total_loss)]) / n_samples_non_nan)
 
 def _compute_signature_kernel_sigma(time_series):
     pairwise_distances = sklearn.metrics.pairwise_distances(time_series.reshape(-1,1).cpu().numpy())
@@ -295,6 +304,8 @@ def infer(
                 raise ValueError("Loss is nan!")
             if diff_mode == "reverse":
                 loss.backward()
+            else:
+                reglrise_loss.backward()
             torch.nn.utils.clip_grad_norm_(flow.parameters(), 1.0)
             torch.save(flow.state_dict(), models_dir / f"model_{it:04d}.pth")
             if loss.item() < best_loss:
