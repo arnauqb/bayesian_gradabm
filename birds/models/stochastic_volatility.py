@@ -56,8 +56,8 @@ class StochVolPrior:
         """
 
         log_nus, log_taus = samples[:, 0], samples[:, 1]
-        log_nus_log_prob = self._log_nu.log_prob(nus)
-        log_taus_log_prob = self._log_tau.log_prob(taus)
+        log_nus_log_prob = self._log_nu.log_prob(log_nus)
+        log_taus_log_prob = self._log_tau.log_prob(log_taus)
         return log_nus_log_prob + log_taus_log_prob
 
 
