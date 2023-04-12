@@ -223,6 +223,7 @@ def infer(
     n_samples_per_epoch: int = 10,
     n_samples_regularization: int = 1000,
     w: float = 0.5,
+    clip_val: float = np.inf,
     save_dir: str = "./results",
     learning_rate: float = 1e-3,
     loss: str = "LogMSELoss",
@@ -231,6 +232,7 @@ def infer(
     device="cpu",
     preload_model_path: str = None,
     progress_bar: bool = True,
+    max_num_epochs_without_improvement: int = 20,
     **kwargs,
 ):
     r"""
@@ -292,6 +294,7 @@ def infer(
         iterator = tqdm(range(n_epochs))
     else:
         iterator = range(n_epochs)
+    num_epochs_without_improvement = 0
     for it in iterator:
         if mpi_rank == 0:
             need_to_plot_posterior = plot_posteriors == "every"
@@ -322,7 +325,7 @@ def infer(
                 loss.backward()
             else:
                 reglrise_loss.backward()
-            torch.nn.utils.clip_grad_norm_(flow.parameters(), 1.0)
+            torch.nn.utils.clip_grad_norm_(flow.parameters(), clip_val)
             torch.save(flow.state_dict(), models_dir / f"model_{it:04d}.pth")
             if loss.item() < best_loss:
                 torch.save(flow.state_dict(), models_dir / f"best_model_{it:04d}.pth")
@@ -330,6 +333,9 @@ def infer(
                 need_to_plot_posterior = need_to_plot_posterior or (
                     plot_posteriors == "best"
                 )
+                num_epochs_without_improvement = 0
+            else:
+                num_epochs_without_improvement += 1
             if forecast_loss.item() < best_forecast_loss:
                 torch.save(
                     flow.state_dict(), models_dir / f"best_model_forecast_{it:04d}.pth"
@@ -350,3 +356,9 @@ def infer(
                 )
             optimizer.step()
             #scheduler.step()
+        if num_epochs_without_improvement >= max_num_epochs_without_improvement:
+            print("Max number of epochs without improvement reached")
+            break
+        tot_loss = forecast_loss.item() + reglrise_loss.item()
+        iterator.set_postfix({"Forecast":forecast_loss.item(), "Reg.":reglrise_loss.item(),
+                             "total":tot_loss})
