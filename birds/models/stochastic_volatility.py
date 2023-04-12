@@ -6,7 +6,7 @@ This code follows Patrick's misspecification paper example.
 """
 
 
-class StochVolPrior:
+class _StochVolPrior:
     def __init__(self):
 
         self._nu = distributions.gamma.Gamma(5, 1)
@@ -33,6 +33,33 @@ class StochVolPrior:
         taus_log_prob = self._tau.log_prob(taus)
         return nus_log_prob + taus_log_prob
 
+class StochVolPrior:
+    def __init__(self):
+
+        self._log_nu = distributions.normal.Normal(1.5, 0.25)
+        self._log_tau = distributions.normal.Normal(-2, 0.5)
+
+    def rsample(self, n_samples):
+
+        log_nu_samples = self._log_nu.rsample((n_samples, 1))
+        log_tau_samples = self._log_tau.rsample((n_samples, 1))
+        return torch.cat((log_nu_samples, log_tau_samples), dim=-1)
+
+    def log_prob(self, samples):
+
+        """
+        Assumes samples are of shape (n_samples, 2), where first column is
+        nu samples and second is tau samples.
+
+        Returns the log prob of each row, so would need to sum to get total
+        log prob
+        """
+
+        log_nus, log_taus = samples[:, 0], samples[:, 1]
+        log_nus_log_prob = self._log_nu.log_prob(nus)
+        log_taus_log_prob = self._log_tau.log_prob(taus)
+        return log_nus_log_prob + log_taus_log_prob
+
 
 class StochVolSimulator(nn.Module):
     def __init__(self, T=100, sigma=0.0):
@@ -43,13 +70,14 @@ class StochVolSimulator(nn.Module):
         self.T = T
         self.sigma = sigma
 
-    def forward(self, theta):
+    def forward(self, log_theta):
         """
         Assumes theta is shape (2,), with nu in first entry and tau in second
         """
+        theta = torch.exp(log_theta)
         nu, tau = theta[0], theta[1]
-        nu = torch.max(torch.tensor(0.5, device=nu.device), nu)  # To avoid nans.
-        tau = torch.max(torch.tensor(10.0, device=tau.device), tau)  # To avoid nans.
+       # nu = torch.max(torch.tensor(0.5, device=nu.device), nu)  # To avoid nans.
+       # tau = torch.max(torch.tensor(10.0, device=tau.device), tau)  # To avoid nans.
         epsilons = self._eps.rsample((self.T + 1,)) / tau
         x = torch.zeros(self.T + 1)
         s = 0.0
