@@ -125,8 +125,10 @@ if __name__ == "__main__":
     if mpi_rank == 0:
         print(f"Calibrating {parameters_to_calibrate} parameters.")
         print(f"Calibrating to {data_to_calibrate} data.")
+        print(f"Regularization parameter set to {args.weight}")
         print(f"Saving results to {args.results_path}")
         print(f"Pre-loading model dict {args.load_model}")
+        print(f"Initial date is {args.start_date}")
     n_parameters = len(parameters_to_calibrate)
 
     config = setup_june_config(

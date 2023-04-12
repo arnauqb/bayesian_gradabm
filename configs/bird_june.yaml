@@ -11,9 +11,9 @@ age_bins_to_save: [0, 18, 25, 65, 100]
 #data_path: /home/coml0859/data_camden.pkl
 #data_path: /Users/arnull/code/gradabm-june/test/data/data.pkl
 #data_path: /cosma/home/dp004/dc-quer1/gradabm-june/test/data/data.pkl
-data_path: /cosma7/data/dp004/dc-quer1/gradabm_june_graphs/camden_leisure_1.pkl
-#data_path: /cosma7/data/dp004/dc-quer1/gradabm_june_graphs/london_leisure_1.pkl
-#data_path: /cosma7/data/dp004/dc-quer1/gradabm_june_graphs/camden_westminster_brent_leisure_1.pkl
+#data_path: /cosma7/data/dp004/dc-quer1/gradabm_june_graphs/camden_leisure_1.pkl
+data_path: /cosma7/data/dp004/dc-quer1/gradabm_june_graphs/london_leisure_1.pkl
+#data_path: /cosma7/data/dp004/dc-quer1/gradabm_june_graphs/camden_westminster_brent.pkl
 
 timer:
   initial_day: '2020-03-01'
