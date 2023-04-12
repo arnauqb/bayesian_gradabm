@@ -5,44 +5,48 @@ system:
   random_seed: random
 
 save_path: ./results/june
+age_bins_to_save: [0, 18, 25, 65, 100]
 
   #data_path: /Users/arnull/code/gradabm-june/worlds/data_camden.pkl
 #data_path: /home/coml0859/data_camden.pkl
 #data_path: /Users/arnull/code/gradabm-june/test/data/data.pkl
-data_path: /cosma7/data/dp004/dc-quer1/torch_june_worlds/data_camden.pkl
+#data_path: /cosma/home/dp004/dc-quer1/gradabm-june/test/data/data.pkl
+data_path: /cosma7/data/dp004/dc-quer1/gradabm_june_graphs/camden_leisure_1.pkl
+#data_path: /cosma7/data/dp004/dc-quer1/gradabm_june_graphs/london_leisure_1.pkl
+#data_path: /cosma7/data/dp004/dc-quer1/gradabm_june_graphs/camden_westminster_brent_leisure_1.pkl
 
 timer:
   initial_day: '2020-03-01'
   step_activities:
     weekday:
       0:
-      - company
-      - school
-      - university
-      - pub
-      - grocery
-      - gym
-      - cinema
-      - visit
-      - care_visit
-      - care_home
-      - household
+       - company
+       - school
+       - pub
+       - university
+       - grocery
+       - gym
+       - cinema
+       - visit
+       - care_visit
+       - care_home
+       - household
     weekend:
       0:
-      - pub
-      - grocery
-      - gym
-      - cinema
-      - visit
-      - care_visit
-      - care_home
-      - household
+       - pub
+       - grocery
+       - gym
+       - cinema
+       - visit
+       - care_visit
+       - care_home
+       - household 
   step_duration:
     weekday:
       0: 24
     weekend:
       0: 24
-  total_days: 30
+  total_days: 65
 
 networks:
   household:
@@ -69,7 +73,7 @@ networks:
     log_beta: 0.5
 
 infection_seed:
-  log_fraction_initial_cases: -3.0
+  log_fraction_initial_cases: -3.5
 
 policies:
   interaction:

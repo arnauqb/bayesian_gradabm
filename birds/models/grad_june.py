@@ -8,6 +8,7 @@ class BirdsJUNE(torch.nn.Module):
         self.runner = runner
         self.params_to_calibrate = params_to_calibrate
         self.data_to_calibrate = data_to_calibrate
+        self.device = runner.device
 
     @classmethod
     def from_config(cls, config, parameters_to_calibrate, data_to_calibrate):
@@ -28,8 +29,14 @@ class BirdsJUNE(torch.nn.Module):
             else:
                 self.runner.model.infection_networks.networks[name].log_beta = params[j]
         res, _ = self.runner()
-        res["daily_deaths"] = self.runner.data.results["daily_deaths"]
         ret = []
         for key in self.data_to_calibrate:
-            ret.append(res[key])
+            if "age" in key:
+                age_bin = int(key.split("_")[-1])
+                toappend = res[key] 
+            elif key == "cases_per_timestep" or key == "deaths_per_timestep":
+                toappend = res[key]
+            else:
+                raise ValueError(f"Data to calibrate {key} not supported.")
+            ret.append(toappend)
         return ret
