@@ -9,19 +9,15 @@ import numpy as np
 import pandas as pd
 from time import time, sleep
 from tqdm import tqdm
-from mpi4py import MPI
 from pathlib import Path
 from typing import Optional
 from collections import defaultdict
 import matplotlib.pyplot as plt
 
-mpi_comm = MPI.COMM_WORLD
-mpi_rank = mpi_comm.Get_rank()
-mpi_size = mpi_comm.Get_size()
-
 from .plotting import plot_posterior
 from .torch_jacfwd import jacfwd
 from .sgld import SGLD
+from .mpi_setup import mpi_comm, mpi_rank, mpi_size
 
 
 def _setup_optimizer(model, flow, learning_rate, n_epochs):
@@ -81,7 +77,10 @@ def _compute_forecast_loss_reverse(
         for i in range(len(outputs_list)):
             observation = obs_data[i]
             model_output = outputs_list[i]
-            loss_i += loss_fn(observation, model_output)
+            loss_i_ = loss_fn(observation, model_output)
+            if torch.isnan(loss_i_):
+                continue
+            loss_i += loss_i_
         loss += loss_i
     return loss / n_samples
 
@@ -111,7 +110,8 @@ def _compute_forecast_loss_forward(
     else:
         params_list_comm = None
     # scatter params to ranks
-    params_list_comm = mpi_comm.bcast(params_list_comm, root=0)
+    if mpi_comm is not None:
+        params_list_comm = mpi_comm.bcast(params_list_comm, root=0)
     # Compute ABM jacobian with Forward-diff
     jac_f = jacfwd(
         aux_fun, 0, randomness="same", has_aux=True, chunk_size=jacobian_chunk_size
@@ -129,9 +129,15 @@ def _compute_forecast_loss_forward(
             total_loss += loss
             jacobians_per_rank.append(jacobian.cpu().numpy())
     jacobians_per_rank = np.array(jacobians_per_rank)
-    jacobians_comm = mpi_comm.gather(jacobians_per_rank, root=0)
-    parameters_indices_per_rank = mpi_comm.gather(parameters_indices_per_rank, root=0)
-    total_loss = np.array(mpi_comm.gather(total_loss.item(), root = 0))
+    if mpi_comm is not None:
+        jacobians_comm = mpi_comm.gather(jacobians_per_rank, root=0)
+    else:
+        jacobians_comm = jacobians_per_rank
+    if mpi_comm is not None:
+        parameters_indices_per_rank = mpi_comm.gather(parameters_indices_per_rank, root=0)
+        total_loss = np.array(mpi_comm.gather(total_loss.item(), root = 0))
+    else:
+        total_loss = total_loss.cpu().numpy()
     if mpi_rank == 0:
         parameters_indices = torch.tensor([i for i_rank in parameters_indices_per_rank for i in i_rank])
         parameters_ordered = params_list[parameters_indices]
@@ -215,6 +221,7 @@ def infer(
     plot_posteriors: str = "every",
     device="cpu",
     preload_model_path: str = None,
+    progress_bar: bool = True,
     **kwargs,
 ):
     r"""
@@ -272,7 +279,7 @@ def infer(
             forecast_loss_fn = _compute_forecast_loss_forward
         else:
             raise ValuError(f"Diff mode {diff_mode} not supported.")
-    if mpi_rank == 0:
+    if mpi_rank == 0 and progress_bar:
         iterator = tqdm(range(n_epochs))
     else:
         iterator = range(n_epochs)
