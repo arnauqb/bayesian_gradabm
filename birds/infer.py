@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Optional
 from collections import defaultdict
 import matplotlib.pyplot as plt
+import warnings
 
 from .plotting import plot_posterior
 from .torch_jacfwd import jacfwd
@@ -64,8 +65,11 @@ def _compute_forecast_loss_reverse(
     model, flow_cond, obs_data, loss_fn, n_samples, jacobian_chunk_size
 ):
     loss = 0.0
-    for i in range(n_samples):
+    n_samples_not_nan = 0
+    for _ in range(n_samples):
         params = flow_cond.rsample()
+        if torch.isnan(params).any():
+            warnings.warn("Flow generated nans")
         outputs_list = model(params)
         loss_i = 0.0
         try:
@@ -77,12 +81,17 @@ def _compute_forecast_loss_reverse(
         for i in range(len(outputs_list)):
             observation = obs_data[i]
             model_output = outputs_list[i]
+            if torch.isnan(model_output).any():
+                warnings.warn("Simulation produced nan -- ignoring")
             loss_i_ = loss_fn(observation, model_output)
             if torch.isnan(loss_i_):
                 continue
+            n_samples_not_nan += 1
             loss_i += loss_i_
         loss += loss_i
-    return loss / n_samples
+    if n_samples_not_nan == 0:
+        raise ValueError("All simulations had nans")
+    return loss / n_samples_not_nan
 
 def _compute_forecast_loss_forward(
     model, flow_cond, obs_data, loss_fn, n_samples, jacobian_chunk_size
