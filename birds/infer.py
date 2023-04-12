@@ -33,7 +33,9 @@ def _setup_optimizer(model, flow, learning_rate, n_epochs):
 
 
 def _setup_loss(loss_name):
-    if loss_name == "LogMSELoss":
+    if callable(loss_name):
+        return loss_name
+    elif loss_name == "LogMSELoss":
         loss_fn = torch.nn.MSELoss(reduction="mean")
 
         def loss(x, y):
