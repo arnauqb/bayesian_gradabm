@@ -45,6 +45,14 @@ class StochVolPrior:
         log_tau_samples = self._log_tau.rsample((n_samples, 1))
         return torch.cat((log_nu_samples, log_tau_samples), dim=-1)
 
+    def sample(self, n_samples):
+
+        if isinstance(n_samples, tuple):
+            n_samples = n_samples[0]
+        log_nu_samples = self._log_nu.sample((n_samples, 1))
+        log_tau_samples = self._log_tau.sample((n_samples, 1))
+        return torch.cat((log_nu_samples, log_tau_samples), dim=-1)
+
     def log_prob(self, samples):
 
         """
