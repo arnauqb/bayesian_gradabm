@@ -194,7 +194,6 @@ def _compute_forecast_loss_signature_kernel_reverse(
     #score_yy = loss_fn.compute_kernel(Y, Y)
     #loss = torch.nn.MSELoss(reduction="mean")(score_xy, score_yy)
     loss = loss_fn.compute_scoring_rule(X, y) + loss_fn.compute_kernel(y,y,1)
-    print(loss)
     return loss
 
 def _get_regularisation(flow_cond, prior, n_samples=5):

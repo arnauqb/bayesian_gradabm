@@ -75,9 +75,7 @@ class StochVolSimulator(nn.Module):
         Assumes theta is shape (2,), with nu in first entry and tau in second
         """
         theta = torch.exp(log_theta)
-        nu, tau = theta[0], theta[1]
-       # nu = torch.max(torch.tensor(0.5, device=nu.device), nu)  # To avoid nans.
-       # tau = torch.max(torch.tensor(10.0, device=tau.device), tau)  # To avoid nans.
+        nu, tau = theta[0] + 1, theta[1] + 1
         epsilons = self._eps.rsample((self.T + 1,)) / tau
         x = torch.zeros(self.T + 1)
         s = 0.0
