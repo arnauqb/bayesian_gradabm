@@ -228,6 +228,7 @@ def infer(
     save_dir: str = "./results",
     learning_rate: float = 1e-3,
     loss: str = "LogMSELoss",
+    reg_loss: str = "KL",
     true_values: Optional[list] = None,
     plot_posteriors: str = "every",
     device="cpu",
@@ -312,9 +313,12 @@ def infer(
             jacobian_chunk_size=jacobian_chunk_size,
         )
         if mpi_rank == 0:
-            reglrise_loss = w * _get_regularisation(
-                flow_cond=flow_cond, prior=prior, n_samples=n_samples_regularization
-            )
+            if reg_loss == "KL":
+                reglrise_loss = w * _get_regularisation(
+                    flow_cond=flow_cond, prior=prior, n_samples=n_samples_regularization
+                )
+            else:
+                reglrise_loss = w * reg_loss(flow_cond, prior, n_samples_regularization)
             loss = forecast_loss + reglrise_loss
             losses["forecast"].append(forecast_loss.item())
             losses["reglrise"].append(reglrise_loss.item())
