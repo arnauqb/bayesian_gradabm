@@ -48,7 +48,10 @@ class StochVolPrior:
     def sample(self, n_samples):
 
         if isinstance(n_samples, tuple):
-            n_samples = n_samples[0]
+            if len(n_samples) > 0:
+                n_samples = n_samples[0]
+            elif len(n_samples) == 0:
+                n_samples = 1
         log_nu_samples = self._log_nu.sample((n_samples, 1))
         log_tau_samples = self._log_tau.sample((n_samples, 1))
         return torch.cat((log_nu_samples, log_tau_samples), dim=-1)
@@ -83,7 +86,7 @@ class StochVolSimulator(nn.Module):
         Assumes theta is shape (2,), with nu in first entry and tau in second
         """
         theta = torch.exp(log_theta)
-        nu, tau = theta[0] + 1, theta[1] + 1
+        nu, tau = theta[..., 0] + 1, theta[..., 1] + 1
         epsilons = self._eps.rsample((self.T + 1,)) / tau
         x = torch.zeros(self.T + 1)
         s = 0.0
