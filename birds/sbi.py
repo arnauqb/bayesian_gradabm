@@ -71,6 +71,7 @@ def sbi_training(simulator,
         #theta = proposal.sample((sim_count,))
         #x = sbi_simulator(theta)
         theta, x = simulate_for_sbi(sbi_simulator, proposal, sim_count, num_workers=num_workers, show_progress_bar=True)
+        assert x.requires_grad == False, "Simulation output should not have a gradient attached"
         # This is usually for reshaping for the embedding net. I.e. sbi requires simulator to output
         # single vector, so may need to reshape output of sbi_simulator above
         #x = sim_postprocess(x)
