@@ -1,4 +1,5 @@
 from sbi.inference import prepare_for_sbi, SNPE, SNLE
+import torch.nn as nn
 
 def sbi_training(simulator,
 				 prior,
@@ -7,6 +8,7 @@ def sbi_training(simulator,
 				 density_estimator="maf",
 				 n_samples=10_000,
 				 n_sims=[10_000], 
+                 embedding_net=nn.Identity(),
 				 sim_postprocess=lambda x: x,
 				 num_workers=15,
 				 outloc=None):
@@ -45,27 +47,32 @@ def sbi_training(simulator,
 	proposal = sbi_prior
 
 	if method == "SNPE":
+        neural_posterior = utils.posterior_nn(
+                model="maf", embedding_net=embedding_net, hidden_features=50, num_transforms=5
+            )
 		inference = SNPE(prior=sbi_prior, density_estimator=density_estimator)
-	elif method == "SNLE":
-		inference = SNLE(prior=sbi_prior, density_estimator=density_estimator)
-	elif method == "SNVI":
+	elif method in ["SNLE", "SNVI"]:
 		inference = SNLE(prior=sbi_prior, density_estimator=density_estimator)
 
 	for sim_count in n_sims:
 		theta = proposal.sample((sim_count,))
 		x = sbi_simulator(theta)
-		# This is usually for reshaping for the embedding net
-		#x = sim_postprocess(x)
+		# This is usually for reshaping for the embedding net. I.e. sbi requires simulator to output
+        # single vector, so may need to reshape output of sbi_simulator above
+		x = sim_postprocess(x)
+
 		if method == "SNPE":
-			_ = inference.append_simulations(theta, x, proposal=proposal).train()
+			density_estimator = inference.append_simulations(theta, x, proposal=proposal).train()
 		else:
 			_ = inference.append_simulations(theta, x).train()
+
 		if method == "SNPE":
-			posterior = inference.build_posterior().set_default_x(y)
+			posterior = inference.build_posterior(density_estimator).set_default_x(y)
 		elif method == "SNLE":
 			posterior = inference.build_posterior().set_default_x(y)
 		elif method == "SNVI":
 			posterior = inference.build_posterior(sample_with="vi", vi_method="fKL").set_default_x(y)
+
 		posteriors.append(posterior)
 		proposal = posterior
 
