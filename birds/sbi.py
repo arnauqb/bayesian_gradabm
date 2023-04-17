@@ -86,7 +86,9 @@ def sbi_training(simulator,
         elif method == "SNLE":
             posterior = inference.build_posterior().set_default_x(y)
         elif method == "SNVI":
+            print("Setting y as context")
             posterior = inference.build_posterior(sample_with="vi", vi_method="fKL").set_default_x(y)
+            posterior.train()
 
         posteriors.append(posterior)
         proposal = posterior
