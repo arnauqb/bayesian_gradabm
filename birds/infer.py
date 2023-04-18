@@ -22,7 +22,7 @@ from .mpi_setup import mpi_comm, mpi_rank, mpi_size
 
 def _setup_optimizer(model, flow, learning_rate, n_epochs):
     parameters_to_optimize = list(flow.parameters())
-    #optimizer = SGLD(parameters_to_optimize, lr=learning_rate)
+    #optimizer = SGLD(parameters_to_optimize, lr=learning_rate, noise_scaling=1.0)
     optimizer = torch.optim.AdamW(parameters_to_optimize, lr=learning_rate)
     #optimizer = torch.optim.SGD(parameters_to_optimize, lr=learning_rate, momentum=0.9)
     scheduler = None # torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100)
@@ -32,17 +32,17 @@ def _setup_optimizer(model, flow, learning_rate, n_epochs):
 
 
 def _setup_loss(loss_name):
+    loss_fn = torch.nn.MSELoss(reduction="mean")
     if loss_name == "LogMSELoss":
-        loss_fn = torch.nn.MSELoss(reduction="mean")
-
         def loss(x, y):
             mask = (x > 0) & (y > 0)  # remove points where log is not defined.
-            loss = loss_fn(torch.log10(x[mask]), torch.log10(y[mask]))
-            return loss
-
+            return loss_fn(torch.log10(x[mask]), torch.log10(y[mask]))
     elif loss_name == "MSELoss":
-        loss_fn = torch.nn.MSELoss(reduction="mean")
         loss = lambda x, y: loss_fn(x, y)
+    elif loss_name == "RelativeError":
+        def loss(x, y):
+            mask = y > 0
+            return loss_fn(x[mask] / y[mask], y[mask] / y[mask])
     else:
         raise ValueError("Loss not supported")
     return loss
