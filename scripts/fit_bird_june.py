@@ -17,17 +17,22 @@ from birds.utils import fix_seed
 from grad_june import Runner
 
 _all_no_seed_parameters = [
-    "household",
-    "company",
-    "school",
-    "university",
-    "pub",
-    "grocery",
-    "gym",
-    "cinema",
-    "visit",
-    "care_visit",
-    "care_home",
+    "beta_household",
+    "beta_company",
+    "beta_school",
+    "beta_university",
+    "beta_pub",
+    "beta_grocery",
+    "beta_gym",
+    "beta_cinema",
+    "beta_visit",
+    "beta_care_visit",
+    "beta_care_home",
+    "sd_company",
+    "sd_school",
+    "sd_care_home",
+    "sd_care_visit",
+    "sd_grocery",
 ]
 
 _all_parameters = ["seed"] + _all_no_seed_parameters
