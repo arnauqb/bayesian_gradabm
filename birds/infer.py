@@ -4,6 +4,7 @@ import torch
 import shutil
 import logging
 import sklearn
+import sklearn.metrics
 import sigkernel
 import numpy as np
 import pandas as pd
@@ -172,20 +173,23 @@ def _compute_forecast_loss_forward(
 def _compute_signature_kernel_sigma(time_series):
     pairwise_distances = sklearn.metrics.pairwise_distances(time_series.reshape(-1,1).cpu().numpy())
     sigma = np.median(pairwise_distances)
+    print("Using signature kernel with Gaussian kernel scale parameter {0}".format(sigma))
     return sigma
 
 def _compute_forecast_loss_signature_kernel_reverse(
     model, flow_cond, obs_data, loss_fn, n_samples, jacobian_chunk_size
 ):
     time_index = torch.linspace(0, 1, obs_data[0].shape[0], device = obs_data[0].device)
-    y = torch.vstack((time_index, torch.log10(obs_data[0]))).transpose(0,1)[None,:].to(torch.double)
+    # obs_data[0] = torch.log10(obs_data[0])
+    y = torch.vstack((time_index, obs_data[0])).transpose(0,1)[None,:].to(torch.double)
     Xs = []
     time_index_batched = time_index.repeat(n_samples).reshape(n_samples, -1)
     for i in range(n_samples):
         params = flow_cond.rsample()
         outputs = torch.hstack(model(params))
         Xs.append(outputs)
-    X = torch.log10(torch.vstack(Xs))
+    X = torch.vstack(Xs)
+    #X = torch.log10(Xs)
     X = torch.cat((time_index_batched[:,None], X[:,None]), 1).transpose(1,2).to(torch.double)
     #Y = y.repeat((X.shape[0],1,1))
     #assert X.shape == (n_samples, obs_data[0].shape[0], 2)
@@ -193,7 +197,7 @@ def _compute_forecast_loss_signature_kernel_reverse(
     #score_xy = loss_fn.compute_kernel(X, Y)
     #score_yy = loss_fn.compute_kernel(Y, Y)
     #loss = torch.nn.MSELoss(reduction="mean")(score_xy, score_yy)
-    loss = loss_fn.compute_scoring_rule(X, y) + loss_fn.compute_kernel(y,y,1)
+    loss = loss_fn.compute_scoring_rule(X, y)# + loss_fn.compute_kernel(y,y,1)
     return loss
 
 def _get_regularisation(flow_cond, prior, n_samples=5):
@@ -325,7 +329,7 @@ def infer(
             losses["total"].append(loss.item())
             if torch.isnan(loss):
                 torch.save(flow.state_dict(), models_dir / f"to_debug.pth")
-                raise ValueError("Loss is nan!")
+                raise ValueError("Loss is nan! Forecast {0} and reg {1}".format(forecast_loss.item(), reglrise_loss.item()))
             if diff_mode == "reverse":
                 loss.backward()
             else:
@@ -366,4 +370,4 @@ def infer(
             break
         tot_loss = forecast_loss.item() + reglrise_loss.item()
         iterator.set_postfix({"Forecast":forecast_loss.item(), "Reg.":reglrise_loss.item(),
-                             "total":tot_loss})
+                              "total":tot_loss, "best loss":best_loss, "epochs since improv.":num_epochs_without_improvement})
