@@ -23,7 +23,7 @@ from .mpi_setup import mpi_comm, mpi_rank, mpi_size
 
 def _setup_optimizer(model, flow, learning_rate, n_epochs):
     parameters_to_optimize = list(flow.parameters())
-    #optimizer = SGLD(parameters_to_optimize, lr=learning_rate)
+    #optimizer = SGLD(parameters_to_optimize, lr=learning_rate, noise_scaling=1.0)
     optimizer = torch.optim.AdamW(parameters_to_optimize, lr=learning_rate)
     #optimizer = torch.optim.SGD(parameters_to_optimize, lr=learning_rate, momentum=0.9)
     scheduler = None # torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100)
@@ -35,17 +35,17 @@ def _setup_optimizer(model, flow, learning_rate, n_epochs):
 def _setup_loss(loss_name):
     if callable(loss_name):
         return loss_name
-    elif loss_name == "LogMSELoss":
-        loss_fn = torch.nn.MSELoss(reduction="mean")
-
+    loss_fn = torch.nn.MSELoss(reduction="mean")
+    if loss_name == "LogMSELoss":
         def loss(x, y):
             mask = (x > 0) & (y > 0)  # remove points where log is not defined.
-            loss = loss_fn(torch.log10(x[mask]), torch.log10(y[mask]))
-            return loss
-
+            return loss_fn(torch.log10(x[mask]), torch.log10(y[mask]))
     elif loss_name == "MSELoss":
-        loss_fn = torch.nn.MSELoss(reduction="mean")
         loss = lambda x, y: loss_fn(x, y)
+    elif loss_name == "RelativeError":
+        def loss(x, y):
+            mask = y > 0
+            return loss_fn(x[mask] / y[mask], y[mask] / y[mask])
     else:
         raise ValueError("Loss not supported")
     return loss
@@ -94,6 +94,34 @@ def _compute_forecast_loss_reverse(
     if n_samples_not_nan == 0:
         raise ValueError("All simulations had nans")
     return loss / n_samples_not_nan
+
+def _compute_forecast_loss_reverse_score(
+    model, flow_cond, obs_data, loss_fn, n_samples, jacobian_chunk_size
+):
+    loss = 0.0
+    to_backprop = 0.0
+    for i in range(n_samples):
+        params = flow_cond.rsample()
+        sample_log_prob = flow_cond.log_prob(params)
+        outputs_list = model(params.detach())
+        loss_i = 0.0
+        try:
+            assert len(outputs_list) == len(obs_data)
+        except:
+            raise ValueError(
+                "Model results should be the same length as observed data."
+            )
+        for i in range(len(outputs_list)):
+            observation = obs_data[i]
+            model_output = outputs_list[i]
+            loss_i_ = loss_fn(observation, model_output)
+            if torch.isnan(loss_i_):
+                continue
+            loss_i += loss_i_
+        loss += loss_i
+        to_backprop += loss_i * sample_log_prob / n_samples
+    to_backprop.backward()
+    return loss / n_samples
 
 def _compute_forecast_loss_forward(
     model, flow_cond, obs_data, loss_fn, n_samples, jacobian_chunk_size
@@ -219,6 +247,7 @@ def infer(
     prior: torch.distributions.Distribution,
     obs_data: list[torch.Tensor],
     diff_mode="reverse",
+    gradient_estimation_mode="pathwise",
     jacobian_chunk_size: int = None,
     n_epochs: int = 100,
     n_samples_per_epoch: int = 10,
@@ -260,6 +289,7 @@ def infer(
             ```
     obs_data: A list of `torch.Tensor` with the observed data series. The shapes should correspond exactly to the output of the `forward()` method of the simulator.
     diff_mode: which diff mode to use. Options are "reverse" or "forward". For high memory tasks use "forward", "reverse" is faster.
+    gradient_estimation_mode: Gradient estimation mode. Options are "pathwise" and "score".
     jacobian_chunk_size: chunk size for torch vmap to compute jacobian. Set to None for max perforamnce, or low number when out of memory.
     n_epochs: Number of epochs
     n_samples_per_epoch: Number of sets of parameters sampled from the flow for each epoch.
@@ -286,12 +316,20 @@ def infer(
         forecast_loss_fn = _compute_forecast_loss_signature_kernel_reverse
     else:
         loss_fn = _setup_loss(loss)
-        if diff_mode == "reverse":
-            forecast_loss_fn = _compute_forecast_loss_reverse
-        elif diff_mode == "forward":
-            forecast_loss_fn = _compute_forecast_loss_forward
+        if gradient_estimation_mode == "pathwise":
+            if diff_mode == "reverse":
+                forecast_loss_fn = _compute_forecast_loss_reverse
+            elif diff_mode == "forward":
+                forecast_loss_fn = _compute_forecast_loss_forward
+            else:
+                raise ValuError(f"Diff mode {diff_mode} not supported.")
+        elif gradient_estimation_mode == "score":
+            if diff_mode == "reverse":
+                forecast_loss_fn = _compute_forecast_loss_reverse_score
+            else:
+                raise ValuError(f"Diff mode {diff_mode} not supported with score gradient estimation.")
         else:
-            raise ValuError(f"Diff mode {diff_mode} not supported.")
+            raise ValueError(f"Gradient estimation mode {gradient_estimation_mode} not supported.")
     if mpi_rank == 0 and progress_bar:
         iterator = tqdm(range(n_epochs))
     else:
@@ -326,7 +364,7 @@ def infer(
             if torch.isnan(loss):
                 torch.save(flow.state_dict(), models_dir / f"to_debug.pth")
                 raise ValueError("Loss is nan!")
-            if diff_mode == "reverse":
+            if diff_mode == "reverse" and gradient_estimation_mode == "pathwise":
                 loss.backward()
             else:
                 reglrise_loss.backward()

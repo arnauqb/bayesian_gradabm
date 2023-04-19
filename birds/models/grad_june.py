@@ -26,8 +26,15 @@ class BirdsJUNE(torch.nn.Module):
                 self.runner.log_fraction_initial_cases = torch.min(
                     torch.tensor(-1.0), params[j]
                 )
+            elif name.startswith("beta"):
+                beta_name = "_".join(name.split("_")[1:])
+                self.runner.model.infection_networks.networks[beta_name].log_beta = params[j]
+            elif name.startswith("sd"):
+                sd_name = "_".join(name.split("_")[1:])
+                factor = torch.sigmoid(params[j]) # guarantees between 0 and 1
+                self.runner.model.policies.interaction_policies[0].beta_factors[sd_name] = factor
             else:
-                self.runner.model.infection_networks.networks[name].log_beta = params[j]
+                raise ValueError(f"Parameter name {name} not recognized.")
         res, _ = self.runner()
         ret = []
         for key in self.data_to_calibrate:

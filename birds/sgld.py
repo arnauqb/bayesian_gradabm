@@ -1,4 +1,5 @@
 import torch
+import math
 import numpy as np
 
 class SGLD(torch.optim.Optimizer):
@@ -17,7 +18,7 @@ class SGLD(torch.optim.Optimizer):
                  num_burn_in_steps=30,
                  eps=1e-8,
                  weight_decay=0,
-                 use_barriers=True) -> None:
+                 use_barriers=False) -> None:
         """ Set up a SGLD Optimizer.
 
         Parameters
