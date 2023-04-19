@@ -74,13 +74,13 @@ def _compute_forecast_loss_reverse(
             raise ValueError(
                 "Model results should be the same length as observed data."
             )
-        for i in range(len(outputs_list)):
-            observation = obs_data[i]
-            model_output = outputs_list[i]
-            loss_i_ = loss_fn(observation, model_output)
-            if torch.isnan(loss_i_):
+        for j in range(len(outputs_list)):
+            observation = obs_data[j]
+            model_output = outputs_list[j]
+            loss_j = loss_fn(observation, model_output)
+            if torch.isnan(loss_j):
                 continue
-            loss_i += loss_i_
+            loss_i += loss_j
         loss += loss_i
     return loss / n_samples
 
@@ -100,13 +100,13 @@ def _compute_forecast_loss_reverse_score(
             raise ValueError(
                 "Model results should be the same length as observed data."
             )
-        for i in range(len(outputs_list)):
-            observation = obs_data[i]
-            model_output = outputs_list[i]
-            loss_i_ = loss_fn(observation, model_output)
-            if torch.isnan(loss_i_):
+        for j in range(len(outputs_list)):
+            observation = obs_data[j]
+            model_output = outputs_list[j]
+            loss_j = loss_fn(observation, model_output)
+            if torch.isnan(loss_j):
                 continue
-            loss_i += loss_i_
+            loss_i += loss_j
         loss += loss_i
         to_backprop += loss_i * sample_log_prob / n_samples
     to_backprop.backward()
