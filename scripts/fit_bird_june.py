@@ -63,9 +63,14 @@ def setup_prior(n_parameters, device, parameter_names):
         if name == "seed":
             means.append(-3.0)
             stds.append(1.0)
-        else:
+        elif name.startswith("beta"):
             means.append(0.0)
             stds.append(1.0)
+        elif name.startswith("sd"):
+            means.append(0.5)
+            stds.append(0.25)
+        else:
+            raise ValueError(f"Wrong pname {name}")
     means = torch.tensor(means, device=device)
     stds = torch.tensor(stds, device=device)
     return torch.distributions.MultivariateNormal(

@@ -32,15 +32,19 @@ def _setup_optimizer(model, flow, learning_rate, n_epochs):
 
 
 def _setup_loss(loss_name):
-    loss_fn = torch.nn.MSELoss(reduction="mean")
     if loss_name == "LogMSELoss":
         def loss(x, y):
+            loss_fn = torch.nn.MSELoss(reduction="mean")
             mask = (x > 0) & (y > 0)  # remove points where log is not defined.
             return loss_fn(torch.log10(x[mask]), torch.log10(y[mask]))
     elif loss_name == "MSELoss":
+        loss_fn = torch.nn.MSELoss(reduction="mean")
         loss = lambda x, y: loss_fn(x, y)
     elif loss_name == "RelativeError":
         def loss(x, y):
+            loss_fn = torch.nn.MSELoss(reduction="mean")
+            x = x.diff()
+            y = y.diff()
             mask = y > 0
             return loss_fn(x[mask] / y[mask], y[mask] / y[mask])
     else:
