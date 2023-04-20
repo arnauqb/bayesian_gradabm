@@ -17,31 +17,31 @@ timer:
       0:
        - company
        - school
-       - pub
-       - university
-       - grocery
-       - gym
-       - cinema
-       - visit
-       - care_visit
-       - care_home
+         #- pub
+         #- university
+         #- grocery
+         #- gym
+         #- cinema
+         #- visit
+         #- care_visit
+         #- care_home
        - household
     weekend:
       0:
-       - pub
-       - grocery
-       - gym
-       - cinema
-       - visit
-       - care_visit
-       - care_home
+        #- pub
+        #- grocery
+        #- gym
+        #- cinema
+        #- visit
+        #- care_visit
+        #- care_home
        - household 
   step_duration:
     weekday:
       0: 24
     weekend:
       0: 24
-  total_days: 65
+  total_days: 15
 
 policies:
   interaction:

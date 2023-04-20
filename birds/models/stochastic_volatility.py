@@ -80,6 +80,7 @@ class StochVolSimulator(nn.Module):
         )
         self.T = T
         self.sigma = sigma
+        self.device = "cpu"
 
     def forward(self, log_theta):
         """

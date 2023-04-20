@@ -15,6 +15,7 @@ from typing import Optional
 from collections import defaultdict
 import matplotlib.pyplot as plt
 import warnings
+from typing import Tuple, Optional
 
 from .plotting import plot_posterior
 from .torch_jacfwd import jacfwd
@@ -22,12 +23,35 @@ from .sgld import SGLD
 from .mpi_setup import mpi_comm, mpi_rank, mpi_size
 
 
-def _setup_optimizer(model, flow, learning_rate, n_epochs):
+def _setup_optimizer(model: torch.nn.Module, flow: torch.nn.Module, learning_rate: float, n_epochs: int) -> Tuple[torch.optim.Optimizer, Optional[torch.optim.lr_scheduler._LRScheduler]]:
+    """
+    Sets up the optimizer and learning rate scheduler for training a given flow model.
+
+    Args:
+        model (torch.nn.Module): The model to be trained.
+        flow (torch.nn.Module): The flow model to be optimized.
+        learning_rate (float): The learning rate for the optimizer.
+        n_epochs (int): The number of epochs to train the model for.
+
+    Returns:
+        Tuple[torch.optim.Optimizer, Optional[torch.optim.lr_scheduler._LRScheduler]]: A tuple containing the optimizer and learning rate scheduler.
+
+    Raises:
+        TypeError: If the model or flow arguments are not of type torch.nn.Module.
+        ValueError: If the learning_rate argument is not a positive float or the n_epochs argument is not a positive integer.
+    """
+    if not isinstance(model, torch.nn.Module):
+        raise TypeError("The model argument must be of type torch.nn.Module.")
+    if not isinstance(flow, torch.nn.Module):
+        raise TypeError("The flow argument must be of type torch.nn.Module.")
+    if not isinstance(learning_rate, float) or learning_rate <= 0:
+        raise ValueError("The learning_rate argument must be a positive float.")
+    if not isinstance(n_epochs, int) or n_epochs <= 0:
+        raise ValueError("The n_epochs argument must be a positive integer.")
+
     parameters_to_optimize = list(flow.parameters())
-    #optimizer = SGLD(parameters_to_optimize, lr=learning_rate, noise_scaling=1.0)
     optimizer = torch.optim.AdamW(parameters_to_optimize, lr=learning_rate)
-    #optimizer = torch.optim.SGD(parameters_to_optimize, lr=learning_rate, momentum=0.9)
-    scheduler = None # torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100)
+    scheduler = None
     n_parameters = sum([len(a) for a in parameters_to_optimize])
     print(f"Training flow with {n_parameters} parameters")
     return optimizer, scheduler
@@ -56,17 +80,30 @@ def _setup_loss(loss_name):
     return loss
 
 
-def _setup_paths(save_dir):
+def _setup_paths(save_dir: str) -> Tuple[Path, Path, Path]:
+    """
+    Sets up the necessary directories for saving posteriors and models.
+
+    Args:
+        save_dir (str): The directory where the posteriors and models will be saved.
+
+    Returns:
+        Tuple[Path, Path, Path]: A tuple containing the save directory, the directory for posteriors, and the directory for saved models.
+
+    Raises:
+        OSError: If there is an error removing the save directory.
+    """
     save_dir = Path(save_dir)
     try:
         shutil.rmtree(save_dir)
-    except:
-        pass
+    except OSError as e:
+        raise OSError(f"Error removing directory {save_dir}: {e}") from None
     posteriors_dir = save_dir / "posteriors"
     models_dir = save_dir / "saved_models"
     posteriors_dir.mkdir(exist_ok=True, parents=True)
     models_dir.mkdir(exist_ok=True, parents=True)
     return save_dir, posteriors_dir, models_dir
+
 
 def _compute_forecast_loss_reverse(
     model, flow_cond, obs_data, loss_fn, n_samples, jacobian_chunk_size
@@ -101,10 +138,34 @@ def _compute_forecast_loss_reverse(
     return loss / n_samples_not_nan
 
 def _compute_forecast_loss_reverse_score(
-    model, flow_cond, obs_data, loss_fn, n_samples, jacobian_chunk_size
-):
-    loss = 0.0
-    to_backprop = 0.0
+    model: torch.nn.Module, 
+    flow_cond: torch.distributions.Distribution, 
+    obs_data: List[torch.Tensor], 
+    loss_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor], 
+    n_samples: int, 
+    jacobian_chunk_size: int
+) -> torch.Tensor:
+    """
+    Computes the reverse score of the forecast loss for a given model and observed data.
+
+    Args:
+        model (torch.nn.Module): The PyTorch model to use for computing the forecast loss.
+        flow_cond (torch.distributions.Distribution): The distribution to use for sampling parameters for the model.
+        obs_data (List[torch.Tensor]): A list of observed data to compare against the model's output.
+        loss_fn (Callable[[torch.Tensor, torch.Tensor], torch.Tensor]): The loss function to use for comparing the model's output to the observed data.
+        n_samples (int): The number of samples to use for computing the reverse score.
+        jacobian_chunk_size (int): The chunk size to use for computing the Jacobian matrix.
+
+    Returns:
+        torch.Tensor: The computed reverse score of the forecast loss.
+
+    Raises:
+        ValueError: If the length of the model's output does not match the length of the observed data.
+
+    """
+    loss = torch.zeros(1, device=model.device, requires_grad=True)
+    to_backprop = torch.zeros(1, device=model.device, requires_grad=True)
+    n_samples_not_nan = 0
     for i in range(n_samples):
         params = flow_cond.rsample()
         sample_log_prob = flow_cond.log_prob(params)
@@ -116,17 +177,20 @@ def _compute_forecast_loss_reverse_score(
             raise ValueError(
                 "Model results should be the same length as observed data."
             )
-        for i in range(len(outputs_list)):
-            observation = obs_data[i]
-            model_output = outputs_list[i]
-            loss_i_ = loss_fn(observation, model_output)
-            if torch.isnan(loss_i_):
+        for j in range(len(outputs_list)):
+            observation = obs_data[j]
+            model_output = outputs_list[j]
+            loss_j = loss_fn(observation, model_output)
+            if torch.isnan(loss_j):
                 continue
-            loss_i += loss_i_
-        loss += loss_i
-        to_backprop += loss_i * sample_log_prob / n_samples
+            loss_i = loss_i + loss_j
+            n_samples_not_nan += 1
+        loss = loss + loss_i
+        to_backprop = to_backprop + loss_i * sample_log_prob 
+    to_backprop = to_backprop / n_samples_not_nan
     to_backprop.backward()
     return loss / n_samples
+
 
 def _compute_forecast_loss_forward(
     model, flow_cond, obs_data, loss_fn, n_samples, jacobian_chunk_size
@@ -187,15 +251,16 @@ def _compute_forecast_loss_forward(
         parameters_ordered = params_list[parameters_indices]
         jacobians_unrolled = [jacobian for jacobian_comm in jacobians_comm for jacobian in jacobian_comm]
         jacobians_unrolled = torch.tensor(np.stack(jacobians_unrolled), device=model.device, dtype=torch.float)
-        total_params_diff = 0.0
+        total_params_diff = torch.zeros(1, device=model.device, requires_grad=True)
         n_samples_non_nan = 0
         for i in range(n_samples):
             jacobian = jacobians_unrolled[i,:]
             parameters = parameters_ordered[i,:]
             if torch.isnan(jacobian).any():
+                print("warning nan jacobian")
                 continue
             # Use reverse diff for flow
-            total_params_diff += torch.dot(jacobian, parameters)
+            total_params_diff = total_params_diff + torch.dot(jacobian, parameters)
             n_samples_non_nan += 1
         # Back-propagate to flow parameters
         total_params_diff = total_params_diff / n_samples_non_nan
