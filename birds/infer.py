@@ -263,7 +263,32 @@ def _compute_forecast_loss_forward(
         total_params_diff.backward()
         return torch.tensor(sum(total_loss[~np.isnan(total_loss)]) / n_samples_non_nan)
 
-def _compute_signature_kernel_sigma(time_series):
+def _compute_signature_kernel_sigma(time_series: np.ndarray) -> float:
+    """
+    Computes the Gaussian kernel scale parameter for the signature kernel using the median pairwise distance
+    between time series.
+
+    Parameters:
+    -----------
+    time_series : np.ndarray
+        A 1D numpy array representing a time series.
+
+    Returns:
+    --------
+    sigma : float
+        The Gaussian kernel scale parameter for the signature kernel.
+
+    Raises:
+    -------
+    None
+
+    Notes:
+    ------
+    This function uses the scikit-learn library to compute the pairwise distances between time series. The
+    resulting distances are used to compute the median, which is then returned as the Gaussian kernel scale
+    parameter for the signature kernel. The function also prints a message indicating the value of sigma that
+    is being used.
+    """
     pairwise_distances = sklearn.metrics.pairwise_distances(time_series.reshape(-1,1).cpu().numpy())
     sigma = np.median(pairwise_distances)
     print("Using signature kernel with Gaussian kernel scale parameter {0}".format(sigma))
@@ -293,15 +318,44 @@ def _compute_forecast_loss_signature_kernel_reverse(
     loss = loss_fn.compute_scoring_rule(X, y)# + loss_fn.compute_kernel(y,y,1)
     return loss
 
-def _get_regularisation(flow_cond, prior, n_samples=5):
+def _get_regularisation(flow_cond: torch.distributions.Distribution, prior: torch.distributions.Distribution, n_samples: int = 5) -> torch.Tensor:
     """
-    Computes the KL divergence between the flow and the prior
+    Computes the KL divergence between the flow and the prior.
+
+    Parameters:
+    -----------
+    flow_cond : torch.distributions.Distribution
+        The distribution of the flow conditioned on the input.
+    prior : torch.distributions.Distribution
+        The prior distribution.
+    n_samples : int, optional
+        The number of samples to use for the computation. Default is 5.
+
+    Returns:
+    --------
+    kl : torch.Tensor
+        The KL divergence between the flow and the prior.
+
+    Raises:
+    -------
+    TypeError:
+        If `flow_cond` or `prior` are not instances of `torch.distributions.Distribution`.
+    ValueError:
+        If `n_samples` is not a positive integer.
     """
+
+    if not isinstance(flow_cond, torch.distributions.Distribution) or not isinstance(prior, torch.distributions.Distribution):
+        raise TypeError("Both `flow_cond` and `prior` must be instances of `torch.distributions.Distribution`.")
+
+    if not isinstance(n_samples, int) or n_samples <= 0:
+        raise ValueError("`n_samples` must be a positive integer.")
+
     samples = flow_cond.rsample((n_samples,))
     flow_lps = flow_cond.log_prob(samples)
     prior_lps = prior.log_prob(samples)
     kl = torch.mean(flow_lps - prior_lps)
     return kl
+
 
 
 def _plot_posterior(flow_cond, true_values, posteriors_dir, it, **kwargs):
