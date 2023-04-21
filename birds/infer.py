@@ -15,7 +15,7 @@ from typing import Optional
 from collections import defaultdict
 import matplotlib.pyplot as plt
 import warnings
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List, Callable
 
 from .plotting import plot_posterior
 from .torch_jacfwd import jacfwd
@@ -163,7 +163,7 @@ def _compute_forecast_loss_reverse_score(
     to_backprop = torch.zeros(1, device=model.device, requires_grad=True)
     n_samples_not_nan = 0
     for i in range(n_samples):
-        params = flow_cond.rsample()
+        params = flow_cond.sample()
         sample_log_prob = flow_cond.log_prob(params)
         outputs_list = model(params.detach())
         loss_i = 0.0
