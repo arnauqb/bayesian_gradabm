@@ -61,7 +61,7 @@ def setup_prior(n_parameters, device, parameter_names):
     stds = []
     for name in parameter_names:
         if name == "seed":
-            means.append(-3.0)
+            means.append(0.0)
             stds.append(1.0)
         elif name.startswith("beta"):
             means.append(0.0)
@@ -176,4 +176,5 @@ if __name__ == "__main__":
         device=device,
         true_values=None,
         lims=None,
+        max_num_epochs_without_improvement=1000,
     )

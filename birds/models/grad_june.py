@@ -24,7 +24,7 @@ class BirdsJUNE(torch.nn.Module):
         for (j, name) in enumerate(self.params_to_calibrate):
             if name == "seed":
                 self.runner.log_fraction_initial_cases = torch.min(
-                    torch.tensor(-1.0), params[j]
+                    torch.tensor(-1.0), params[j] - 3.0 # displace it
                 )
             elif name.startswith("beta"):
                 beta_name = "_".join(name.split("_")[1:])

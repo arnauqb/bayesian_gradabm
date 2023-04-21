@@ -15,7 +15,7 @@ from typing import Optional
 from collections import defaultdict
 import matplotlib.pyplot as plt
 import warnings
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List, Callable
 
 from .plotting import plot_posterior
 from .torch_jacfwd import jacfwd
@@ -71,8 +71,6 @@ def _setup_loss(loss_name):
     elif loss_name == "RelativeError":
         def loss(x, y):
             loss_fn = torch.nn.MSELoss(reduction="mean")
-            x = x.diff()
-            y = y.diff()
             mask = y > 0
             return loss_fn(x[mask] / y[mask], y[mask] / y[mask])
     else:
@@ -97,7 +95,7 @@ def _setup_paths(save_dir: str) -> Tuple[Path, Path, Path]:
     try:
         shutil.rmtree(save_dir)
     except OSError as e:
-        raise OSError(f"Error removing directory {save_dir}: {e}") from None
+        pass
     posteriors_dir = save_dir / "posteriors"
     models_dir = save_dir / "saved_models"
     posteriors_dir.mkdir(exist_ok=True, parents=True)
@@ -140,7 +138,7 @@ def _compute_forecast_loss_reverse(
 def _compute_forecast_loss_reverse_score(
     model: torch.nn.Module, 
     flow_cond: torch.distributions.Distribution, 
-    obs_data: List[torch.Tensor], 
+    obs_data: list[torch.Tensor], 
     loss_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor], 
     n_samples: int, 
     jacobian_chunk_size: int
@@ -167,7 +165,7 @@ def _compute_forecast_loss_reverse_score(
     to_backprop = torch.zeros(1, device=model.device, requires_grad=True)
     n_samples_not_nan = 0
     for i in range(n_samples):
-        params = flow_cond.rsample()
+        params = flow_cond.sample()
         sample_log_prob = flow_cond.log_prob(params)
         outputs_list = model(params.detach())
         loss_i = 0.0
@@ -472,9 +470,9 @@ def infer(
                 )
             optimizer.step()
             #scheduler.step()
-        if num_epochs_without_improvement >= max_num_epochs_without_improvement:
-            print("Max number of epochs without improvement reached")
-            break
-        tot_loss = forecast_loss.item() + reglrise_loss.item()
-        iterator.set_postfix({"Forecast":forecast_loss.item(), "Reg.":reglrise_loss.item(),
-                              "total":tot_loss, "best loss":best_loss, "epochs since improv.":num_epochs_without_improvement})
+            if num_epochs_without_improvement >= max_num_epochs_without_improvement:
+                print("Max number of epochs without improvement reached")
+                break
+            tot_loss = forecast_loss.item() + reglrise_loss.item()
+            iterator.set_postfix({"Forecast":forecast_loss.item(), "Reg.":reglrise_loss.item(),
+                                  "total":tot_loss, "best loss":best_loss, "epochs since improv.":num_epochs_without_improvement})

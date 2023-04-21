@@ -5,13 +5,13 @@ mpirun -np 5 python scripts/fit_bird_june.py \
     -p all \
     -d cuda:5 cuda:6 cuda:7 cuda:8 cuda:9 \
     --n_epochs 10000 \
-    --loss RelativeError \
+    --loss LogMSELoss \
     --lr 0.001 \
     --data_calibrate deaths_per_timestep \
-    -w 0.0 \
+    -w 0.001 \
     --data_path ./data/london_deaths.csv \
     --june_config ./configs/bird_policies.yaml \
-    --results_path /cosma7/data/dp004/dc-quer1/birds_results/tests_sd_w_0.0_relative \
+    --results_path /cosma7/data/dp004/dc-quer1/birds_results/tests_sd_w_0.001 \
     --n_samples_per_epoch 5 \
     --diff_mode forward \
     --chunk_size 0 \
