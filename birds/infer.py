@@ -11,7 +11,7 @@ import pandas as pd
 from time import time, sleep
 from tqdm import tqdm
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable, List
 from collections import defaultdict
 import matplotlib.pyplot as plt
 import warnings
@@ -368,7 +368,7 @@ def infer(
     model: torch.nn.Module,
     flow: zuko.flows.FlowModule,
     prior: torch.distributions.Distribution,
-    obs_data: list[torch.Tensor],
+    obs_data: List[torch.Tensor],
     diff_mode="reverse",
     gradient_estimation_mode="pathwise",
     jacobian_chunk_size: int = None,
