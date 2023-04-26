@@ -11,7 +11,6 @@ import pandas as pd
 from time import time, sleep
 from tqdm import tqdm
 from pathlib import Path
-from typing import Optional
 from collections import defaultdict
 import matplotlib.pyplot as plt
 import warnings
@@ -115,7 +114,7 @@ def _setup_paths(save_dir: str) -> Tuple[Path, Path, Path]:
 
 
 def _compute_forecast_loss_reverse(
-    model, flow_cond, obs_data, loss_fn, n_samples, jacobian_chunk_size
+    model, flow, flow_cond, obs_data, loss_fn, n_samples, jacobian_chunk_size
 ):
     loss = 0.0
     n_samples_not_nan = 0
@@ -146,8 +145,52 @@ def _compute_forecast_loss_reverse(
         raise ValueError("All simulations had nans")
     return loss / n_samples_not_nan
 
+def _compute_forecast_loss_reverse_two_step(
+    model, flow, flow_cond, obs_data, loss_fn, n_samples, jacobian_chunk_size
+):
+    loss = 0.0
+    n_samples_not_nan = 0
+    n_flow_parameters = len(list(flow.parameters()))
+    gradients = torch.zeros(n_flow_parameters)
+    for _ in range(n_samples):
+        params = flow_cond.rsample()
+        if torch.isnan(params).any():
+            warnings.warn("Flow generated nans")
+        params_for_abm = params.detach().clone()
+        params_for_abm.requires_grad = True
+        outputs_list = model(params_for_abm)
+        loss_i = 0.0
+        try:
+            assert len(outputs_list) == len(obs_data)
+        except:
+            raise ValueError(
+                "Model results should be the same length as observed data."
+            )
+        for i in range(len(outputs_list)):
+            observation = obs_data[i]
+            model_output = outputs_list[i]
+            if torch.isnan(model_output).any():
+                warnings.warn("Simulation produced nan -- ignoring")
+            loss_i_ = loss_fn(observation, model_output)
+            if torch.isnan(loss_i_):
+                continue
+            loss_i += loss_i_
+        if torch.isnan(loss_i) or loss_i == 0.0:
+            continue
+        n_samples_not_nan += 1
+        gradient_theta = torch.autograd.grad(loss_i, params_for_abm)
+        gradients += torch.autograd.grad(params, [p for p in flow.parameters() if p.requires_grad], gradient_theta[0])
+        loss += loss_i.item()
+    # set gradients
+    for k, param in enumerate(flow.parameters()):
+        param.grad = gradients[k] / n_samples_not_nan
+    if n_samples_not_nan == 0:
+        raise ValueError("All simulations had nans")
+    return loss / n_samples_not_nan
+
 def _compute_forecast_loss_reverse_score(
     model: torch.nn.Module, 
+    flow, 
     flow_cond: torch.distributions.Distribution, 
     obs_data: list[torch.Tensor], 
     loss_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor], 
@@ -202,7 +245,7 @@ def _compute_forecast_loss_reverse_score(
 
 
 def _compute_forecast_loss_forward(
-    model, flow_cond, obs_data, loss_fn, n_samples, jacobian_chunk_size
+    model, flow, flow_cond, obs_data, loss_fn, n_samples, jacobian_chunk_size
 ):
     def aux_fun(params):
         loss = 0.0
@@ -307,30 +350,6 @@ def _compute_signature_kernel_sigma(time_series: np.ndarray) -> float:
     print("Using signature kernel with Gaussian kernel scale parameter {0}".format(sigma))
     return sigma
 
-def _compute_forecast_loss_signature_kernel_reverse(
-    model, flow_cond, obs_data, loss_fn, n_samples, jacobian_chunk_size
-):
-    time_index = torch.linspace(0, 1, obs_data[0].shape[0], device = obs_data[0].device)
-    # obs_data[0] = torch.log10(obs_data[0])
-    y = torch.vstack((time_index, obs_data[0])).transpose(0,1)[None,:].to(torch.double)
-    Xs = []
-    time_index_batched = time_index.repeat(n_samples).reshape(n_samples, -1)
-    for i in range(n_samples):
-        params = flow_cond.rsample()
-        outputs = torch.hstack(model(params))
-        Xs.append(outputs)
-    X = torch.vstack(Xs)
-    #X = torch.log10(Xs)
-    X = torch.cat((time_index_batched[:,None], X[:,None]), 1).transpose(1,2).to(torch.double)
-    #Y = y.repeat((X.shape[0],1,1))
-    #assert X.shape == (n_samples, obs_data[0].shape[0], 2)
-    #assert Y.shape == X.shape
-    #score_xy = loss_fn.compute_kernel(X, Y)
-    #score_yy = loss_fn.compute_kernel(Y, Y)
-    #loss = torch.nn.MSELoss(reduction="mean")(score_xy, score_yy)
-    loss = loss_fn.compute_scoring_rule(X, y)# + loss_fn.compute_kernel(y,y,1)
-    return loss
-
 def _get_regularisation(flow_cond: torch.distributions.Distribution, prior: torch.distributions.Distribution, n_samples: int = 5) -> torch.Tensor:
     """
     Computes the KL divergence between the flow and the prior.
@@ -381,7 +400,7 @@ def infer(
     model: torch.nn.Module,
     flow: zuko.flows.FlowModule,
     prior: torch.distributions.Distribution,
-    obs_data: list[torch.Tensor],
+    obs_data: List[torch.Tensor],
     diff_mode="reverse",
     gradient_estimation_mode="pathwise",
     jacobian_chunk_size: int = None,
@@ -445,27 +464,26 @@ def infer(
     losses = defaultdict(list)
     best_loss = np.inf
     best_forecast_loss = np.inf
-    if loss == "signature_kernel":
-        sigma = _compute_signature_kernel_sigma(obs_data[0]) #TODO: expand to any dim.
-        static_kernel = sigkernel.RBFKernel(sigma=sigma)
-        loss_fn = sigkernel.SigKernel(static_kernel, dyadic_order=1)
-        forecast_loss_fn = _compute_forecast_loss_signature_kernel_reverse
-    else:
-        loss_fn = _setup_loss(loss)
-        if gradient_estimation_mode == "pathwise":
-            if diff_mode == "reverse":
-                forecast_loss_fn = _compute_forecast_loss_reverse
-            elif diff_mode == "forward":
-                forecast_loss_fn = _compute_forecast_loss_forward
-            else:
-                raise ValuError(f"Diff mode {diff_mode} not supported.")
-        elif gradient_estimation_mode == "score":
-            if diff_mode == "reverse":
-                forecast_loss_fn = _compute_forecast_loss_reverse_score
-            else:
-                raise ValuError(f"Diff mode {diff_mode} not supported with score gradient estimation.")
+    loss_fn = _setup_loss(loss)
+    if gradient_estimation_mode == "pathwise":
+        if diff_mode == "reverse":
+            forecast_loss_fn = _compute_forecast_loss_reverse
+        elif diff_mode == "forward":
+            forecast_loss_fn = _compute_forecast_loss_forward
         else:
-            raise ValueError(f"Gradient estimation mode {gradient_estimation_mode} not supported.")
+            raise ValuError(f"Diff mode {diff_mode} not supported.")
+    elif gradient_estimation_mode == "pathwise-parts":
+        if diff_mode == "reverse":
+            forecast_loss_fn = _compute_forecast_loss_reverse_two_step
+        else:
+            raise ValuError(f"Diff mode {diff_mode} not supported.")
+    elif gradient_estimation_mode == "score":
+        if diff_mode == "reverse":
+            forecast_loss_fn = _compute_forecast_loss_reverse_score
+        else:
+            raise ValuError(f"Diff mode {diff_mode} not supported with score gradient estimation.")
+    else:
+        raise ValueError(f"Gradient estimation mode {gradient_estimation_mode} not supported.")
     if mpi_rank == 0 and progress_bar:
         iterator = tqdm(range(n_epochs))
     else:
@@ -480,6 +498,7 @@ def infer(
             flow_cond = None
         forecast_loss = forecast_loss_fn(
             model=model,
+            flow=flow,
             flow_cond=flow_cond,
             obs_data=obs_data,
             loss_fn=loss_fn,
