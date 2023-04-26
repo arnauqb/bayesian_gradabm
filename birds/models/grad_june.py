@@ -28,7 +28,8 @@ class BirdsJUNE(torch.nn.Module):
                 )
             elif name.startswith("beta"):
                 beta_name = "_".join(name.split("_")[1:])
-                self.runner.model.infection_networks.networks[beta_name].log_beta = params[j]
+                value = params[j] #torch.tanh(params[j])
+                self.runner.model.infection_networks.networks[beta_name].log_beta = value
             elif name.startswith("sd"):
                 sd_name = "_".join(name.split("_")[1:])
                 factor = torch.sigmoid(params[j]) # guarantees between 0 and 1

@@ -109,8 +109,10 @@ if __name__ == "__main__":
     parser.add_argument("--lr", default=1e-3, type=float)
     parser.add_argument("-w", "--weight", default=0.01, type=float)
     parser.add_argument("--diff_mode", default="reverse", type=str)
+    parser.add_argument("--gradient_mode", default="pathwise", type=str)
     parser.add_argument("--chunk_size", default=0, type=int)
     parser.add_argument("--load_model", default=None, type=str)
+    parser.add_argument("--clip_val", default=1.0, type=float)
     args = parser.parse_args()
 
     if type(args.parameters) != list:
@@ -157,12 +159,15 @@ if __name__ == "__main__":
         data_to_calibrate,
         device,
     )
+    #df = pd.DataFrame()
+    #df.to_csv("/cosma7/data/dp004/dc-quer1/birds_results/temp.csv")
     infer(
         model=model,
         flow=flow,
         prior=prior,
         obs_data=obs_data,
         diff_mode=args.diff_mode,
+        gradient_estimation_mode=args.gradient_mode,
         jacobian_chunk_size=jacobian_chunk_size,
         n_epochs=args.n_epochs,
         n_samples_per_epoch=args.n_samples_per_epoch,
@@ -176,5 +181,6 @@ if __name__ == "__main__":
         device=device,
         true_values=None,
         lims=None,
-        max_num_epochs_without_improvement=1000,
+        max_num_epochs_without_improvement=1000000,
+        clip_val = args.clip_val,
     )

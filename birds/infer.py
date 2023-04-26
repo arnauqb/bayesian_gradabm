@@ -58,21 +58,32 @@ def _setup_optimizer(model: torch.nn.Module, flow: torch.nn.Module, learning_rat
 
 
 def _setup_loss(loss_name):
+    """
+    Careful! x is data, y is model output!!!!
+    """
     if callable(loss_name):
         return loss_name
     if loss_name == "LogMSELoss":
         def loss(x, y):
             loss_fn = torch.nn.MSELoss(reduction="mean")
+            x = x.diff()
+            y = y.diff()
             mask = (x > 0) & (y > 0)  # remove points where log is not defined.
-            return loss_fn(torch.log10(x[mask]), torch.log10(y[mask]))
+            x = x[mask].log10()
+            y = y[mask].log10()
+            return loss_fn(x, y)
     elif loss_name == "MSELoss":
         loss_fn = torch.nn.MSELoss(reduction="mean")
         loss = lambda x, y: loss_fn(x, y)
     elif loss_name == "RelativeError":
         def loss(x, y):
             loss_fn = torch.nn.MSELoss(reduction="mean")
-            mask = y > 0
-            return loss_fn(x[mask] / y[mask], y[mask] / y[mask])
+            x = x.diff()
+            y = y.diff()
+            mask = (x > 0)  & (y > 0)
+            x = x[mask].log10()
+            y = y[mask].log10()
+            return loss_fn(x / x, y / x)
     else:
         raise ValueError("Loss not supported")
     return loss
@@ -161,13 +172,13 @@ def _compute_forecast_loss_reverse_score(
         ValueError: If the length of the model's output does not match the length of the observed data.
 
     """
-    loss = torch.zeros(1, device=model.device, requires_grad=True)
-    to_backprop = torch.zeros(1, device=model.device, requires_grad=True)
+    loss = 0.0
+    to_backprop = 0.0
     n_samples_not_nan = 0
     for i in range(n_samples):
         params = flow_cond.sample()
         sample_log_prob = flow_cond.log_prob(params)
-        outputs_list = model(params.detach())
+        outputs_list = model(params)
         loss_i = 0.0
         try:
             assert len(outputs_list) == len(obs_data)
@@ -181,13 +192,13 @@ def _compute_forecast_loss_reverse_score(
             loss_j = loss_fn(observation, model_output)
             if torch.isnan(loss_j):
                 continue
-            loss_i = loss_i + loss_j
+            loss_i += loss_j
             n_samples_not_nan += 1
-        loss = loss + loss_i
+        loss += loss_i
         to_backprop = to_backprop + loss_i * sample_log_prob 
     to_backprop = to_backprop / n_samples_not_nan
     to_backprop.backward()
-    return loss / n_samples
+    return loss / n_samples_not_nan
 
 
 def _compute_forecast_loss_forward(
@@ -352,7 +363,7 @@ def _get_regularisation(flow_cond: torch.distributions.Distribution, prior: torc
     if not isinstance(n_samples, int) or n_samples <= 0:
         raise ValueError("`n_samples` must be a positive integer.")
 
-    samples = flow_cond.rsample((n_samples,))
+    samples = flow_cond.sample((n_samples,))
     flow_lps = flow_cond.log_prob(samples)
     prior_lps = prior.log_prob(samples)
     kl = torch.mean(flow_lps - prior_lps)
