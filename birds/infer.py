@@ -65,8 +65,6 @@ def _setup_loss(loss_name):
     if loss_name == "LogMSELoss":
         def loss(x, y):
             loss_fn = torch.nn.MSELoss(reduction="mean")
-            x = x.diff()
-            y = y.diff()
             mask = (x > 0) & (y > 0)  # remove points where log is not defined.
             x = x[mask].log10()
             y = y[mask].log10()
@@ -77,12 +75,23 @@ def _setup_loss(loss_name):
     elif loss_name == "RelativeError":
         def loss(x, y):
             loss_fn = torch.nn.MSELoss(reduction="mean")
-            x = x.diff()
-            y = y.diff()
-            mask = (x > 0)  & (y > 0)
+            mask = (x > 0) & (y > 0)  # remove points where log is not defined.
             x = x[mask].log10()
             y = y[mask].log10()
-            return loss_fn(x / x, y / x)
+            y = y / x
+            x = x / x
+            x = x.diff()
+            y = y.diff()
+            return loss_fn(x, y)
+    elif loss_name == "cosine":
+        def loss(x, y):
+            x = x.diff()
+            y = y.diff()
+            mask = (x > 0) & (y > 0)
+            x = x[mask].log10()
+            y = y[mask].log10()
+            cos = torch.nn.CosineSimilarity(dim=0, eps=1e-6)
+            return 1.0 - cos(x - x.mean(), y - y.mean())
     else:
         raise ValueError("Loss not supported")
     return loss
@@ -151,7 +160,7 @@ def _compute_forecast_loss_reverse_two_step(
     loss = 0.0
     n_samples_not_nan = 0
     n_flow_parameters = len(list(flow.parameters()))
-    gradients = torch.zeros(n_flow_parameters)
+    gradients = [0.0] * n_flow_parameters
     for _ in range(n_samples):
         params = flow_cond.rsample()
         if torch.isnan(params).any():
@@ -178,9 +187,11 @@ def _compute_forecast_loss_reverse_two_step(
         if torch.isnan(loss_i) or loss_i == 0.0:
             continue
         n_samples_not_nan += 1
-        gradient_theta = torch.autograd.grad(loss_i, params_for_abm)
-        gradients += torch.autograd.grad(params, [p for p in flow.parameters() if p.requires_grad], gradient_theta[0])
-        loss += loss_i.item()
+        gradient_theta = torch.autograd.grad(loss_i, params_for_abm)[0]
+        gradient_phi = torch.autograd.grad(params, [p for p in flow.parameters() if p.requires_grad], gradient_theta)
+        for i in range(n_flow_parameters):
+            gradients[i] += gradient_phi[i]
+        loss += loss_i
     # set gradients
     for k, param in enumerate(flow.parameters()):
         param.grad = gradients[k] / n_samples_not_nan
@@ -524,6 +535,7 @@ def infer(
             else:
                 reglrise_loss.backward()
             torch.nn.utils.clip_grad_norm_(flow.parameters(), clip_val)
+            #print(np.mean([a.item() for p in flow.parameters() for a in p.grad.flatten()]))
             torch.save(flow.state_dict(), models_dir / f"model_{it:04d}.pth")
             if loss.item() < best_loss:
                 torch.save(flow.state_dict(), models_dir / f"best_model_{it:04d}.pth")
