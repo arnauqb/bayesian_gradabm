@@ -50,9 +50,9 @@ def _setup_optimizer(model: torch.nn.Module, flow: torch.nn.Module, learning_rat
 
     parameters_to_optimize = list(flow.parameters())
     optimizer = torch.optim.AdamW(parameters_to_optimize, lr=learning_rate)
-    scheduler = None
-    n_parameters = sum([len(a) for a in parameters_to_optimize])
-    print(f"Training flow with {n_parameters} parameters")
+    scheduler = None #torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[50, 1000], gamma=0.1)
+    #n_parameters = sum([len(a) for a in parameters_to_optimize])
+    #print(f"Training flow with {n_parameters} parameters")
     return optimizer, scheduler
 
 
@@ -83,13 +83,13 @@ def _setup_loss(loss_name):
             x = x.diff()
             y = y.diff()
             return loss_fn(x, y)
-    elif loss_name == "cosine":
+    elif loss_name == "pearson":
         def loss(x, y):
             x = x.diff()
             y = y.diff()
-            mask = (x > 0) & (y > 0)
-            x = x[mask].log10()
-            y = y[mask].log10()
+            #mask = (x > 0) & (y > 0)
+            #x = x[mask].log10()
+            #y = y[mask].log10()
             cos = torch.nn.CosineSimilarity(dim=0, eps=1e-6)
             return 1.0 - cos(x - x.mean(), y - y.mean())
     else:
@@ -565,7 +565,8 @@ def infer(
                     **kwargs,
                 )
             optimizer.step()
-            #scheduler.step()
+            if scheduler is not None:
+                scheduler.step()
             if num_epochs_without_improvement >= max_num_epochs_without_improvement:
                 print("Max number of epochs without improvement reached")
                 break

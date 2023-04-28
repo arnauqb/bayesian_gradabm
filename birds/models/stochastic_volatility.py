@@ -33,8 +33,9 @@ class _StochVolPrior:
         taus_log_prob = self._tau.log_prob(taus)
         return nus_log_prob + taus_log_prob
 
-class StochVolPrior:
+class StochVolPrior(torch.distributions.Distribution):
     def __init__(self):
+        super().__init__()
 
         self._log_nu = distributions.normal.Normal(1.5, 0.25)
         self._log_tau = distributions.normal.Normal(-2, 0.5)
@@ -86,6 +87,7 @@ class StochVolSimulator(nn.Module):
         """
         Assumes theta is shape (2,), with nu in first entry and tau in second
         """
+        log_theta = 10 * torch.tanh(log_theta) #torch.clamp(log_theta, min=-5.0, max=5.0)
         theta = torch.exp(log_theta)
         nu, tau = theta[..., 0] + 1, theta[..., 1] + 1
         epsilons = self._eps.rsample((self.T + 1,)) / tau
