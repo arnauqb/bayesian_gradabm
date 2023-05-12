@@ -33,7 +33,7 @@ class _StochVolPrior:
         taus_log_prob = self._tau.log_prob(taus)
         return nus_log_prob + taus_log_prob
 
-class StochVolPrior:
+class StochVolPrior(distributions.distribution.Distribution):
     def __init__(self):
 
         self._log_nu = distributions.normal.Normal(1.5, 0.25)
